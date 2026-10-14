@@ -1,3 +1,20 @@
+"""
+PWM sweep of the 3 ESCs (Raspberry Pi 5, hardware PWM, 50 Hz).
+
+ESC1 -> GPIO12 | ESC2 -> GPIO13 | ESC3 -> GPIO18
+
+Arm at 1000 us for 3 s. Each sweep ramps up from 1100 to MAX_US (1300 us)
+in 10 us steps, then back down the same way, holding 0.5 s per step.
+Returns to 1000 us at the end. Raise MAX_US gradually between runs.
+
+Sequence (ENTER before each; motors not in the combo stay at 1000 us):
+  1) single:  (1), (2), (3)
+  2) pairs:   (1,2), (1,3), (2,3)
+  3) all:     (1,2,3)
+
+Ctrl+C resets to 1000 us and stops.
+"""
+
 import itertools
 import signal
 import subprocess
@@ -68,6 +85,7 @@ signal.signal(signal.SIGINT, on_sigint)
 
 # Sweep
 def sweep(motor_ids):
+    """Sweep the specified motors from START_US to MAX_US and back"""
     print(f"Starting sweep for motors: {motor_ids}"
         f"(GPIO {[MOTORS[m]['gpio'] for m in motor_ids]})")
     up = range(START_US, MAX_US + 1, STEP_US)
@@ -80,6 +98,7 @@ def sweep(motor_ids):
     time.sleep(1.0)
     
 def main():
+    """Main function to initialize PWM and perform sweeps on motors"""
     mux_pins()
 
     for m, cfg in MOTORS.items():
