@@ -20,3 +20,8 @@ MAX_US = 1300
 STEP_US = 10
 HOLD_S = 0.5
 ARM_TIME = 3.0
+
+# Helper Funcions
+def us_to_duty_cycle(us):
+    """Convert microseconds to duty cycle percentage."""
+    return (us / PERIOD_US) * 100.0
