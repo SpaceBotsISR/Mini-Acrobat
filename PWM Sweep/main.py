@@ -1,4 +1,5 @@
 import itertools
+import subprocess
 
 from rpi_hardware_pwm import HardwarePWM
 
@@ -23,5 +24,12 @@ ARM_TIME = 3.0
 
 # Helper Funcions
 def us_to_duty_cycle(us):
-    """Convert microseconds to duty cycle percentage."""
+    """Convert microseconds to duty cycle percentage"""
     return (us / PERIOD_US) * 100.0
+
+def mux_pins():
+    """Pin Muxing for PWM channels (persistent across reboots)"""
+    for m in MOTORS.values():
+        subprocess.run(["pinctrl", "set", str(m["gpio"]), m["alt"]], check=True)
+
+    
