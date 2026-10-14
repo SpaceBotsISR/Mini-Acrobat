@@ -1,9 +1,11 @@
 import itertools
+import signal
 import subprocess
-from time import time
-
+import sys
+import time
 
 from rpi_hardware_pwm import HardwarePWM
+
 
 # Configuration
 MOTORS = {
@@ -37,11 +39,13 @@ def mux_pins():
 pwms = {}
 
 def set_pulse(motor_ids, us):
+    """Set the pulse width for the specified motors"""
     duty = us_to_duty_cycle(us)
     for m in motor_ids:
         pwms[m].change_duty_cycle(duty)
 
 def stop_all():
+    """Stop all PWM signals"""
     for p in pwms.values():
         try:
             p.change_duty_cycle(us_to_duty_cycle(ARM_US))
@@ -53,3 +57,11 @@ def stop_all():
             p.stop()
         except Exception:
             pass
+
+def on_sigint(sig, frame):
+    """Handle Ctrl+C gracefully"""
+    print("\nStopping all motors...")
+    stop_all()
+    sys.exit(0)
+
+signal.signal(signal.SIGINT, on_sigint)
