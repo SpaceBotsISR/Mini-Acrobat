@@ -1,5 +1,7 @@
 import itertools
 import subprocess
+from time import time
+
 
 from rpi_hardware_pwm import HardwarePWM
 
@@ -32,4 +34,22 @@ def mux_pins():
     for m in MOTORS.values():
         subprocess.run(["pinctrl", "set", str(m["gpio"]), m["alt"]], check=True)
 
-    
+pwms = {}
+
+def set_pulse(motor_ids, us):
+    duty = us_to_duty_cycle(us)
+    for m in motor_ids:
+        pwms[m].change_duty_cycle(duty)
+
+def stop_all():
+    for p in pwms.values():
+        try:
+            p.change_duty_cycle(us_to_duty_cycle(ARM_US))
+        except Exception:
+            pass
+    time.sleep(0.5)
+    for p in pwms.values():
+        try:
+            p.stop()
+        except Exception:
+            pass
