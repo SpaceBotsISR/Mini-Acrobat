@@ -79,4 +79,32 @@ def sweep(motor_ids):
     set_pulse(motor_ids, ARM_US)
     time.sleep(1.0)
     
-    
+def main():
+    mux_pins()
+
+    for m, cfg in MOTORS.items():
+        p = HardwarePWM(pwm_channel=cfg["channel"], hz=FREQ_HZ, chip=PWM_CHIP)
+        p.start(us_to_duty_cycle(ARM_US))
+        pwms[m] = p
+
+    print(f"Arming motors for {ARM_TIME} seconds...")
+    time.sleep(ARM_TIME)
+
+    ids = list(MOTORS.keys())
+    phases = [
+        ("Individual Motors", list(itertools.combinations(ids, 1))),
+        ("Pairs of Motors", list(itertools.combinations(ids, 2))),
+        ("All Motors", list(itertools.combinations(ids, 3))),
+    ]
+
+    try:
+        for name, combos in phases:
+            print(f"\nPhase: {name}")
+            for combo in combos:
+                input(f"Press Enter to sweep motors {combo} (Ctrl+C to stop)...")
+                sweep(combo)
+    finally:
+        stop_all()
+
+if __name__ == "__main__":
+    main()
