@@ -65,3 +65,18 @@ def on_sigint(sig, frame):
     sys.exit(0)
 
 signal.signal(signal.SIGINT, on_sigint)
+
+# Sweep
+def sweep(motor_ids):
+    print(f"Starting sweep for motors: {motor_ids}"
+        f"(GPIO {[MOTORS[m]['gpio'] for m in motor_ids]})")
+    up = range(START_US, MAX_US + 1, STEP_US)
+    down = range(MAX_US, START_US - 1, -STEP_US)
+    for us in list(up) + list(down):
+        set_pulse(motor_ids, us)
+        print(f" {us} us", end="\r", flush=True)
+        time.sleep(HOLD_S)
+    set_pulse(motor_ids, ARM_US)
+    time.sleep(1.0)
+    
+    
