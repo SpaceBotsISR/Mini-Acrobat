@@ -30,8 +30,7 @@ MOTORS = {
     3: {"channel": 2, "gpio": 18, "alt": "a3"},
 }
 
-# TODO: Check if this is correct for the Pi 5 (PWM_CHIP)
-PWM_CHIP = 2
+PWM_CHIP = 0
 FREQ_HZ = 50
 PERIOD_US = 1000000 / FREQ_HZ
 
