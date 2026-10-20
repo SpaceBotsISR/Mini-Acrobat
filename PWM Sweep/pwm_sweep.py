@@ -23,6 +23,7 @@ Ctrl+C resets all channels to 1000 us and stops.
 import argparse
 import glob
 import itertools
+import os
 import signal
 import subprocess
 import sys
@@ -57,19 +58,17 @@ def parse_args():
     ap.add_argument("--max", type=float, default=1600.0, help="top pulse width in us (<= 2000)")
     ap.add_argument("--rate", type=float, default=100.0, help="ramp rate in us/s")
     ap.add_argument("--hold", type=float, default=2.0, help="hold time at max in s")
+    ap.add_argument("--chip", type=int, default=None, help="force pwmchip number (default: auto-detect RP1 PWM0)")
     return ap.parse_args()
 
 
 # Helpers
 def find_pwm_chip():
-    """Find the pwmchip that exposes 4 channels (RP1 PWM0)"""
+    """Find the pwmchip of RP1 PWM0 (the block wired to GPIO12/13/18).
+    PWM0 sits at 1f00098000, PWM1 at 1f0009c000; pwmchip numbering can vary."""
     for d in sorted(glob.glob("/sys/class/pwm/pwmchip*")):
-        try:
-            with open(f"{d}/npwm") as f:
-                if int(f.read().strip()) >= 4:
-                    return int(d.split("pwmchip")[-1])
-        except (OSError, ValueError):
-            continue
+        if "1f00098000" in os.path.realpath(d):
+            return int(d.split("pwmchip")[-1])
     return PWM_CHIP_FALLBACK
 
 
@@ -171,8 +170,9 @@ def main():
     ARGS = parse_args()
     ARGS.max = min(ARGS.max, 2000.0)
     PERIOD_US = 1e6 / ARGS.freq
-    CHIP = find_pwm_chip()
-    print(f"pwmchip{CHIP}, {ARGS.freq:.0f} Hz (period {PERIOD_US:.0f} us)")
+    CHIP = ARGS.chip if ARGS.chip is not None else find_pwm_chip()
+    print(f"pwmchip{CHIP} -> {os.path.realpath(f'/sys/class/pwm/pwmchip{CHIP}')}")
+    print(f"{ARGS.freq:.0f} Hz (period {PERIOD_US:.0f} us)")
 
     mux_pins()
     for m, cfg in MOTORS.items():
