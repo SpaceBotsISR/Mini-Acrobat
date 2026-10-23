@@ -7,10 +7,15 @@ d = lambda us: us / 2500 * 100
 
 try:
     print("1000 us (armar)")
-    p.start(d(1000)); time.sleep(4)
+    p.start(d(1000))
+    time.sleep(4)
     print("1500 us")
-    p.change_duty_cycle(d(1500)); time.sleep(5)
+    p.change_duty_cycle(d(1500))
+    time.sleep(5)
     print("de volta a 1000 us")
-    p.change_duty_cycle(d(1000)); time.sleep(1)
+    p.change_duty_cycle(d(1000))
+    time.sleep(1)
 finally:
-    p.change_duty_cycle(d(1000)); time.sleep(0.5); p.stop()
+    p.change_duty_cycle(d(1000))
+    time.sleep(0.5)
+    p.stop()

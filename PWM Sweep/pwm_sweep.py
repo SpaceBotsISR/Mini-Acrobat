@@ -10,8 +10,7 @@ UNIDIRECTIONAL (default, same as v2). For each motor combo (ENTER before each):
   3) hold at --max for --hold s, ramp back down to idle, return to 1000 us
 
 BIDIRECTIONAL (--bidir). ESCs MUST already be in 3D mode (BlueJay/BLHeli_S).
-  Rest/arm pulse is NEUTRAL (default 1500 us), NOT 1000 us.
-  !! On an ESC that is NOT in 3D mode, 1500 us = ~50 % throttle. Props OFF. !!
+  Rest/arm pulse is NEUTRAL (default 1500 us).
   For each combo, for each direction (forward, then reverse):
   1) KICK: neutral +/- --kick-off us for --kick-time s (skipped if --kick-off 0)
   2) continuous ramp towards neutral +/- --max-off at --rate us/s
@@ -64,21 +63,71 @@ pwms = {}
 
 def parse_args():
     ap = argparse.ArgumentParser(description="Smooth ESC sweep with start kick")
-    ap.add_argument("--freq", type=float, default=400.0, help="PWM frame rate in Hz (BLHeli_S accepts 50-500)")
-    ap.add_argument("--kick", type=float, default=1300.0, help="kick pulse width in us (unidirectional)")
+    ap.add_argument(
+        "--freq",
+        type=float,
+        default=400.0,
+        help="PWM frame rate in Hz (BLHeli_S accepts 50-500)",
+    )
+    ap.add_argument(
+        "--kick",
+        type=float,
+        default=1300.0,
+        help="kick pulse width in us (unidirectional)",
+    )
     ap.add_argument("--kick-time", type=float, default=0.5, help="kick duration in s")
-    ap.add_argument("--max", type=float, default=1600.0, help="top pulse width in us (<= 2000) (unidirectional)")
+    ap.add_argument(
+        "--max",
+        type=float,
+        default=1600.0,
+        help="top pulse width in us (<= 2000) (unidirectional)",
+    )
     ap.add_argument("--rate", type=float, default=100.0, help="ramp rate in us/s")
     ap.add_argument("--hold", type=float, default=2.0, help="hold time at max in s")
-    ap.add_argument("--chip", type=int, default=None, help="force pwmchip number (default: auto-detect RP1 PWM0)")
+    ap.add_argument(
+        "--chip",
+        type=int,
+        default=None,
+        help="force pwmchip number (default: auto-detect RP1 PWM0)",
+    )
     # Bidirectional options
-    ap.add_argument("--bidir", action="store_true", help="bidirectional (3D) test; ESCs must be in 3D mode")
-    ap.add_argument("--neutral", type=float, default=1500.0, help="3D neutral pulse in us")
-    ap.add_argument("--dead", type=float, default=30.0, help="3D deadband half-width in us (ESC ignores neutral +/- this)")
-    ap.add_argument("--kick-off", type=float, default=150.0, help="3D kick offset from neutral in us (0 = no kick)")
-    ap.add_argument("--max-off", type=float, default=300.0, help="3D top offset from neutral in us (max 500)")
-    ap.add_argument("--dir-wait", type=float, default=1.5, help="3D wait at neutral between directions in s")
-    ap.add_argument("--single", action="store_true", help="only test individual motors (skip pairs and all)")
+    ap.add_argument(
+        "--bidir",
+        action="store_true",
+        help="bidirectional (3D) test; ESCs must be in 3D mode",
+    )
+    ap.add_argument(
+        "--neutral", type=float, default=1500.0, help="3D neutral pulse in us"
+    )
+    ap.add_argument(
+        "--dead",
+        type=float,
+        default=30.0,
+        help="3D deadband half-width in us (ESC ignores neutral +/- this)",
+    )
+    ap.add_argument(
+        "--kick-off",
+        type=float,
+        default=150.0,
+        help="3D kick offset from neutral in us (0 = no kick)",
+    )
+    ap.add_argument(
+        "--max-off",
+        type=float,
+        default=300.0,
+        help="3D top offset from neutral in us (max 500)",
+    )
+    ap.add_argument(
+        "--dir-wait",
+        type=float,
+        default=1.5,
+        help="3D wait at neutral between directions in s",
+    )
+    ap.add_argument(
+        "--single",
+        action="store_true",
+        help="only test individual motors (skip pairs and all)",
+    )
     return ap.parse_args()
 
 
@@ -188,7 +237,9 @@ def sweep(motor_ids):
 def sweep_bidir(motor_ids):
     """Forward then reverse, always passing through neutral and waiting there."""
     n = ARGS.neutral
-    print(f"Bidirectional sweep motors {motor_ids} (GPIO {[MOTORS[m]['gpio'] for m in motor_ids]})")
+    print(
+        f"Bidirectional sweep motors {motor_ids} (GPIO {[MOTORS[m]['gpio'] for m in motor_ids]})"
+    )
     for m in motor_ids:
         print(f"  motor {m} sysfs: {read_state(MOTORS[m]['channel'])}")
 
@@ -236,8 +287,12 @@ def main():
 
     if ARGS.bidir:
         print("\n*** BIDIRECTIONAL MODE ***")
-        print(f"Arming at NEUTRAL {ARGS.neutral:.0f} us. If an ESC is NOT in 3D mode, this is ~50 % throttle.")
-        input("Propellers OFF, motors free to spin, ESCs set to 3D? Press Enter to continue (Ctrl+C to abort)...")
+        print(
+            f"Arming at NEUTRAL {ARGS.neutral:.0f} us. If an ESC is NOT in 3D mode, this is ~50 % throttle."
+        )
+        input(
+            "Propellers OFF, motors free to spin, ESCs set to 3D? Press Enter to continue (Ctrl+C to abort)..."
+        )
 
     mux_pins()
     for m, cfg in MOTORS.items():
@@ -251,7 +306,9 @@ def main():
     if ARGS.bidir:
         ans = input("Did ALL motors stay still at neutral? [y/N] ").strip().lower()
         if ans != "y":
-            print("A motor spun at neutral -> that ESC is not in 3D mode (or neutral differs). Aborting.")
+            print(
+                "A motor spun at neutral -> that ESC is not in 3D mode (or neutral differs). Aborting."
+            )
             stop_all()
             return
 
