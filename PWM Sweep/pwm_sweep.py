@@ -1,7 +1,7 @@
 """
 Smooth PWM sweep of the 3 ESCs (Raspberry Pi 5, RP1 hardware PWM).
-tests ALL direction combinations; --auto runs unattended.
-BIDIRECTIONAL (3D) is now the DEFAULT, because the ESCs are configured in
+v5: tests ALL direction combinations; --auto runs unattended.
+v4: BIDIRECTIONAL (3D) is now the DEFAULT, because the ESCs are configured in
 3D mode (min 1168 / center 1500 / max 1832). The old unidirectional behaviour
 is still available with --unidir, but in 3D mode it arms at 1000 us, which is
 FULL REVERSE, so it asks for confirmation first.
@@ -30,6 +30,7 @@ Examples:
   python3 pwm_sweep.py                                 # 3D test, singles + pairs + all
   python3 pwm_sweep.py --single --kick-off 0 --rate 20 # find start points
   python3 pwm_sweep.py --max-off 300 --kick-off 150
+  python3 pwm_sweep.py --by-dir --max-pct 20 --dead-down 40 --dead-up 25   # equal thrust both ways
   python3 pwm_sweep.py --by-dir --kick-off 0 --rate 15 --max-off 66   # direction check, ~20 %
 
 Ctrl+C resets all channels to rest (neutral in 3D, 1000 us in --unidir) and stops.
@@ -133,6 +134,43 @@ def parse_args():
         "--auto",
         action="store_true",
         help="run all combinations without waiting for Enter between them",
+    )
+    ap.add_argument(
+        "--invert",
+        type=int,
+        nargs="*",
+        default=[],
+        help="motors whose direction is inverted in software, e.g. --invert 2 3 "
+        "(default: none, i.e. the wiring already gives the same direction on all motors)",
+    )
+    ap.add_argument(
+        "--max-pct",
+        type=float,
+        default=None,
+        help="percent mode: sweep up to this %% of the useful range with the motor "
+        "deadzone of each side skipped (equal %% = equal thrust FWD/REV). "
+        "Replaces --max-off/--kick-off/--rate",
+    )
+    ap.add_argument(
+        "--rate-pct", type=float, default=5.0, help="percent mode ramp rate in %%/s"
+    )
+    ap.add_argument(
+        "--dead-up",
+        type=float,
+        default=40.0,
+        help="percent mode: us above neutral where the motor really starts (pulse > neutral)",
+    )
+    ap.add_argument(
+        "--dead-down",
+        type=float,
+        default=40.0,
+        help="percent mode: us below neutral where the motor really starts (pulse < neutral)",
+    )
+    ap.add_argument(
+        "--full",
+        type=float,
+        default=332.0,
+        help="percent mode: useful range in us from neutral (ESC 1168/1500/1832 -> 332)",
     )
     ap.add_argument(
         "--by-dir",
@@ -250,30 +288,52 @@ def sweep(motor_ids):
     time.sleep(1.0)
 
 
-def set_signs(signs, off):
-    """Set each motor to neutral + sign*off (signs = {motor: +1/-1})."""
-    n = ARGS.neutral
+def eff_sign(m, s):
+    """Direction sign actually sent to motor m (software inversion per motor)."""
+    return -s if m in ARGS.invert else s
+
+
+def to_offset(es, x):
+    """Pulse offset in us from neutral for control value x on pulse side es
+    (+1 above / -1 below neutral). Raw mode: x already is in us. Percent mode
+    (--max-pct): x in 0..1 of the useful range, skipping that side's deadzone,
+    so the same x gives the same thrust on both sides."""
+    if ARGS.max_pct is None:
+        return x
+    if x <= 0:
+        return 0.0
+    dead = ARGS.dead_up if es > 0 else ARGS.dead_down
+    return dead + x * (ARGS.full - dead)
+
+
+def pulse_us(m, s, x):
+    es = eff_sign(m, s)
+    return ARGS.neutral + es * to_offset(es, x)
+
+
+def set_signs(signs, x):
+    """Set each motor to its pulse for control value x (signs = {motor: +1/-1})."""
     for m, s in signs.items():
-        pwms[m].change_duty_cycle(us_to_duty(n + s * off))
+        pwms[m].change_duty_cycle(us_to_duty(pulse_us(m, s, x)))
 
 
-def ramp_off(signs, start_off, end_off, rate):
-    """Ramp the offset from neutral; every motor moves in its own direction."""
-    if start_off == end_off:
+def ramp_off(signs, start_x, end_x, rate):
+    """Ramp the control value; every motor moves in its own direction."""
+    if start_x == end_x:
         return
-    duration = abs(end_off - start_off) / rate
+    duration = abs(end_x - start_x) / rate
     t0 = time.monotonic()
     while True:
         t = time.monotonic() - t0
         if t >= duration:
             break
-        off = start_off + (end_off - start_off) * t / duration
-        set_signs(signs, off)
-        n = ARGS.neutral
-        abs_us = " ".join(f"M{m}:{n + sg * off:6.0f}" for m, sg in signs.items())
-        print(f"  offset {off:6.1f} us -> {abs_us} us   ", end="\r", flush=True)
+        x = start_x + (end_x - start_x) * t / duration
+        set_signs(signs, x)
+        abs_us = " ".join(f"M{m}:{pulse_us(m, sg, x):6.0f}" for m, sg in signs.items())
+        tag = f"thr {x * 100:5.1f} %" if ARGS.max_pct is not None else f"offset {x:6.1f} us"
+        print(f"  {tag} -> {abs_us} us   ", end="\r", flush=True)
         time.sleep(UPDATE_S)
-    set_signs(signs, end_off)
+    set_signs(signs, end_x)
 
 
 def sweep_dirs(motor_ids, pattern):
@@ -284,22 +344,30 @@ def sweep_dirs(motor_ids, pattern):
     label = ", ".join(f"M{m} {'FWD' if s > 0 else 'REV'}" for m, s in signs.items())
     print(f"\n  --- {label} ---")
 
+    pct = ARGS.max_pct is not None
+    top = ARGS.max_pct / 100.0 if pct else ARGS.max_off
+    low = 0.0 if pct else ARGS.dead
+    rate = ARGS.rate_pct / 100.0 if pct else ARGS.rate
+
     set_pulse(motor_ids, n)
     time.sleep(0.5)
 
     ramp_from = 0.0
-    if ARGS.kick_off > 0:
+    if ARGS.kick_off > 0 and not pct:
         print(f"  kick {ARGS.kick_off:.0f} us off neutral for {ARGS.kick_time}s")
         set_signs(signs, ARGS.kick_off)
         time.sleep(ARGS.kick_time)
         ramp_from = ARGS.kick_off
 
-    print(f"  ramp {ramp_from:.0f} -> {ARGS.max_off:.0f} us off neutral at {ARGS.rate:.0f} us/s")
-    ramp_off(signs, ramp_from, ARGS.max_off, ARGS.rate)
+    if pct:
+        print(f"  ramp 0 -> {ARGS.max_pct:.0f} % at {ARGS.rate_pct:.1f} %/s (deadzone skipped)")
+    else:
+        print(f"  ramp {ramp_from:.0f} -> {top:.0f} us off neutral at {rate:.0f} us/s")
+    ramp_off(signs, ramp_from, top, rate)
     time.sleep(ARGS.hold)
 
     print("\n  ramp down")
-    ramp_off(signs, ARGS.max_off, ARGS.dead, ARGS.rate * 2)
+    ramp_off(signs, top, low, rate * 2)
     set_pulse(motor_ids, n)
     print(f"  neutral {n:.0f} us, waiting {ARGS.dir_wait}s")
     time.sleep(ARGS.dir_wait)
@@ -326,12 +394,26 @@ def main():
     ARGS.kick_off = min(ARGS.kick_off, ARGS.max_off)
     if ARGS.bidir:
         REST_US = ARGS.neutral
-        if ARGS.dead >= ARGS.max_off:
+        if ARGS.max_pct is None and ARGS.dead >= ARGS.max_off:
             sys.exit("--dead must be smaller than --max-off")
+        if ARGS.max_pct is not None:
+            if not 0 < ARGS.max_pct <= 100:
+                sys.exit("--max-pct must be in (0, 100]")
+            if ARGS.dead_up >= ARGS.full or ARGS.dead_down >= ARGS.full:
+                sys.exit("--dead-up/--dead-down must be smaller than --full")
     PERIOD_US = 1e6 / ARGS.freq
     CHIP = ARGS.chip if ARGS.chip is not None else find_pwm_chip()
     print(f"pwmchip{CHIP} -> {os.path.realpath(f'/sys/class/pwm/pwmchip{CHIP}')}")
     print(f"{ARGS.freq:.0f} Hz (period {PERIOD_US:.0f} us)")
+    print(
+        "Software direction inversion: "
+        + (", ".join(f"M{m}" for m in ARGS.invert) if ARGS.invert else "none")
+    )
+    if ARGS.max_pct is not None:
+        print(
+            f"Percent mode: max {ARGS.max_pct:.0f} %, deadzone skipped "
+            f"(+{ARGS.dead_up:.0f} us above / -{ARGS.dead_down:.0f} us below neutral)"
+        )
 
     if ARGS.bidir:
         print("\n*** BIDIRECTIONAL (3D) MODE ***")
