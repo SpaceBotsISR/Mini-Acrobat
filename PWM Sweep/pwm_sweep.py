@@ -1,5 +1,6 @@
 """
 Smooth PWM sweep of the 3 ESCs (Raspberry Pi 5, RP1 hardware PWM).
+tests ALL direction combinations; --auto runs unattended.
 BIDIRECTIONAL (3D) is now the DEFAULT, because the ESCs are configured in
 3D mode (min 1168 / center 1500 / max 1832). The old unidirectional behaviour
 is still available with --unidir, but in 3D mode it arms at 1000 us, which is
@@ -128,6 +129,11 @@ def parse_args():
         help="3D wait at neutral between directions in s",
     )
     ap.add_argument(
+        "--auto",
+        action="store_true",
+        help="run all combinations without waiting for Enter between them",
+    )
+    ap.add_argument(
         "--single",
         action="store_true",
         help="only test individual motors (skip pairs and all)",
@@ -238,40 +244,69 @@ def sweep(motor_ids):
     time.sleep(1.0)
 
 
-def sweep_bidir(motor_ids):
-    """Forward then reverse, always passing through neutral and waiting there."""
+def set_signs(signs, off):
+    """Set each motor to neutral + sign*off (signs = {motor: +1/-1})."""
     n = ARGS.neutral
+    for m, s in signs.items():
+        pwms[m].change_duty_cycle(us_to_duty(n + s * off))
+
+
+def ramp_off(signs, start_off, end_off, rate):
+    """Ramp the offset from neutral; every motor moves in its own direction."""
+    if start_off == end_off:
+        return
+    duration = abs(end_off - start_off) / rate
+    t0 = time.monotonic()
+    while True:
+        t = time.monotonic() - t0
+        if t >= duration:
+            break
+        off = start_off + (end_off - start_off) * t / duration
+        set_signs(signs, off)
+        print(f"  offset {off:6.1f} us", end="\r", flush=True)
+        time.sleep(UPDATE_S)
+    set_signs(signs, end_off)
+
+
+def sweep_dirs(motor_ids, pattern):
+    """One sweep with a given direction per motor (+1 forward / -1 reverse),
+    always starting from and returning to neutral, then waiting there."""
+    n = ARGS.neutral
+    signs = dict(zip(motor_ids, pattern))
+    label = ", ".join(f"M{m} {'FWD' if s > 0 else 'REV'}" for m, s in signs.items())
+    print(f"\n  --- {label} ---")
+
+    set_pulse(motor_ids, n)
+    time.sleep(0.5)
+
+    ramp_from = 0.0
+    if ARGS.kick_off > 0:
+        print(f"  kick {ARGS.kick_off:.0f} us off neutral for {ARGS.kick_time}s")
+        set_signs(signs, ARGS.kick_off)
+        time.sleep(ARGS.kick_time)
+        ramp_from = ARGS.kick_off
+
+    print(f"  ramp {ramp_from:.0f} -> {ARGS.max_off:.0f} us off neutral at {ARGS.rate:.0f} us/s")
+    ramp_off(signs, ramp_from, ARGS.max_off, ARGS.rate)
+    time.sleep(ARGS.hold)
+
+    print("\n  ramp down")
+    ramp_off(signs, ARGS.max_off, ARGS.dead, ARGS.rate * 2)
+    set_pulse(motor_ids, n)
+    print(f"  neutral {n:.0f} us, waiting {ARGS.dir_wait}s")
+    time.sleep(ARGS.dir_wait)
+
+
+def sweep_bidir(motor_ids):
+    """All direction combinations for these motors: 2 for one motor, 4 for a
+    pair, 8 for three. Each combination is a full neutral-to-neutral sweep."""
     print(
         f"Bidirectional sweep motors {motor_ids} (GPIO {[MOTORS[m]['gpio'] for m in motor_ids]})"
     )
     for m in motor_ids:
         print(f"  motor {m} sysfs: {read_state(MOTORS[m]['channel'])}")
-
-    set_pulse(motor_ids, n)
-    time.sleep(0.5)
-
-    for name, sign in (("FORWARD", +1), ("REVERSE", -1)):
-        end_us = n + sign * ARGS.max_off
-        start_us = n + sign * ARGS.dead
-        print(f"\n  --- {name} ---")
-
-        ramp_from = n
-        if ARGS.kick_off > 0:
-            kick_us = n + sign * ARGS.kick_off
-            print(f"  kick {kick_us:.0f} us for {ARGS.kick_time}s")
-            set_pulse(motor_ids, kick_us)
-            time.sleep(ARGS.kick_time)
-            ramp_from = kick_us
-
-        print(f"  ramp {ramp_from:.0f} -> {end_us:.0f} us at {ARGS.rate:.0f} us/s")
-        ramp(motor_ids, ramp_from, end_us, ARGS.rate)
-        time.sleep(ARGS.hold)
-
-        print("\n  ramp down")
-        ramp(motor_ids, end_us, start_us, ARGS.rate * 2)
-        set_pulse(motor_ids, n)
-        print(f"  neutral {n:.0f} us, waiting {ARGS.dir_wait}s")
-        time.sleep(ARGS.dir_wait)
+    for pattern in itertools.product((+1, -1), repeat=len(motor_ids)):
+        sweep_dirs(motor_ids, pattern)
 
 
 def main():
@@ -338,7 +373,10 @@ def main():
         for name, combos in phases:
             print(f"\nPhase: {name}")
             for combo in combos:
-                input(f"Press Enter to sweep motors {combo} (Ctrl+C to stop)...")
+                if ARGS.auto:
+                    print(f"\nMotors {combo} (Ctrl+C to stop)")
+                else:
+                    input(f"Press Enter to sweep motors {combo} (Ctrl+C to stop)...")
                 run(combo)
     finally:
         stop_all()
