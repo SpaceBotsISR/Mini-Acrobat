@@ -330,7 +330,11 @@ def ramp_off(signs, start_x, end_x, rate):
         x = start_x + (end_x - start_x) * t / duration
         set_signs(signs, x)
         abs_us = " ".join(f"M{m}:{pulse_us(m, sg, x):6.0f}" for m, sg in signs.items())
-        tag = f"thr {x * 100:5.1f} %" if ARGS.max_pct is not None else f"offset {x:6.1f} us"
+        tag = (
+            f"thr {x * 100:5.1f} %"
+            if ARGS.max_pct is not None
+            else f"offset {x:6.1f} us"
+        )
         print(f"  {tag} -> {abs_us} us   ", end="\r", flush=True)
         time.sleep(UPDATE_S)
     set_signs(signs, end_x)
@@ -360,7 +364,9 @@ def sweep_dirs(motor_ids, pattern):
         ramp_from = ARGS.kick_off
 
     if pct:
-        print(f"  ramp 0 -> {ARGS.max_pct:.0f} % at {ARGS.rate_pct:.1f} %/s (deadzone skipped)")
+        print(
+            f"  ramp 0 -> {ARGS.max_pct:.0f} % at {ARGS.rate_pct:.1f} %/s (deadzone skipped)"
+        )
     else:
         print(f"  ramp {ramp_from:.0f} -> {top:.0f} us off neutral at {rate:.0f} us/s")
     ramp_off(signs, ramp_from, top, rate)
@@ -417,12 +423,8 @@ def main():
 
     if ARGS.bidir:
         print("\n*** BIDIRECTIONAL (3D) MODE ***")
-        print(
-            f"Arming at NEUTRAL {ARGS.neutral:.0f} us."
-        )
-        input(
-            "Press Enter to continue (Ctrl+C to abort)"
-        )
+        print(f"Arming at NEUTRAL {ARGS.neutral:.0f} us.")
+        input("Press Enter to continue (Ctrl+C to abort)")
     else:
         print("\n*** UNIDIRECTIONAL MODE ***")
         print(
