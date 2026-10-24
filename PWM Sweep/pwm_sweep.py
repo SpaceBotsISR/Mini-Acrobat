@@ -30,6 +30,7 @@ Examples:
   python3 pwm_sweep.py                                 # 3D test, singles + pairs + all
   python3 pwm_sweep.py --single --kick-off 0 --rate 20 # find start points
   python3 pwm_sweep.py --max-off 300 --kick-off 150
+  python3 pwm_sweep.py --by-dir --kick-off 0 --rate 15 --max-off 66   # direction check, ~20 %
 
 Ctrl+C resets all channels to rest (neutral in 3D, 1000 us in --unidir) and stops.
 """
@@ -132,6 +133,11 @@ def parse_args():
         "--auto",
         action="store_true",
         help="run all combinations without waiting for Enter between them",
+    )
+    ap.add_argument(
+        "--by-dir",
+        action="store_true",
+        help="direction check: M1,M2,M3 all FORWARD first, then M1,M2,M3 all REVERSE",
     )
     ap.add_argument(
         "--single",
@@ -263,7 +269,9 @@ def ramp_off(signs, start_off, end_off, rate):
             break
         off = start_off + (end_off - start_off) * t / duration
         set_signs(signs, off)
-        print(f"  offset {off:6.1f} us", end="\r", flush=True)
+        n = ARGS.neutral
+        abs_us = " ".join(f"M{m}:{n + sg * off:6.0f}" for m, sg in signs.items())
+        print(f"  offset {off:6.1f} us -> {abs_us} us   ", end="\r", flush=True)
         time.sleep(UPDATE_S)
     set_signs(signs, end_off)
 
@@ -368,6 +376,18 @@ def main():
             ("All Motors", list(itertools.combinations(ids, 3))),
         ]
     run = sweep_bidir if ARGS.bidir else sweep
+
+    if ARGS.by_dir and ARGS.bidir:
+        try:
+            for sign, name in ((+1, "FORWARD"), (-1, "REVERSE")):
+                print(f"\n=== ALL MOTORS {name}, one at a time (M1, M2, M3) ===")
+                for m in ids:
+                    if not ARGS.auto:
+                        input(f"Press Enter for motor {m} {name} (Ctrl+C to stop)...")
+                    sweep_dirs((m,), (sign,))
+        finally:
+            stop_all()
+        return
 
     try:
         for name, combos in phases:
