@@ -1,15 +1,13 @@
 """
 Smooth PWM sweep of the 3 ESCs (Raspberry Pi 5, RP1 hardware PWM).
-v3: adds --bidir mode to test bidirectional (3D) operation.
+BIDIRECTIONAL (3D) is now the DEFAULT, because the ESCs are configured in
+3D mode (min 1168 / center 1500 / max 1832). The old unidirectional behaviour
+is still available with --unidir, but in 3D mode it arms at 1000 us, which is
+FULL REVERSE, so it asks for confirmation first.
 
 ESC1 -> GPIO12 (PWM0_CHAN0) | ESC2 -> GPIO13 (PWM0_CHAN1) | ESC3 -> GPIO18 (PWM0_CHAN2)
 
-UNIDIRECTIONAL (default, same as v2). For each motor combo (ENTER before each):
-  1) KICK: jump to --kick us for --kick-time s to break static friction
-  2) continuous ramp  kick -> --max  at --rate us/s
-  3) hold at --max for --hold s, ramp back down to idle, return to 1000 us
-
-BIDIRECTIONAL (--bidir). ESCs MUST already be in 3D mode (BlueJay/BLHeli_S).
+BIDIRECTIONAL (default). ESCs MUST already be in 3D mode (BlueJay/BLHeli_S).
   Rest/arm pulse is NEUTRAL (default 1500 us).
   For each combo, for each direction (forward, then reverse):
   1) KICK: neutral +/- --kick-off us for --kick-time s (skipped if --kick-off 0)
@@ -21,13 +19,18 @@ BIDIRECTIONAL (--bidir). ESCs MUST already be in 3D mode (BlueJay/BLHeli_S).
   To find where the motor actually starts: --kick-off 0 --rate 20 and watch
   the printed us value when the motor begins to spin.
 
-Examples:
-  python3 pwm_sweep_v3.py                                 # original behaviour
-  python3 pwm_sweep_v3.py --bidir --single                # 3D test, one motor at a time
-  python3 pwm_sweep_v3.py --bidir --max-off 400 --kick-off 150
-  python3 pwm_sweep_v3.py --bidir --single --kick-off 0 --rate 20   # find start points
+UNIDIRECTIONAL (--unidir, only for ESCs NOT in 3D mode). For each motor combo:
+  1) KICK: jump to --kick us for --kick-time s to break static friction
+  2) continuous ramp  kick -> --max  at --rate us/s
+  3) hold at --max for --hold s, ramp back down to idle, return to 1000 us
 
-Ctrl+C resets all channels to rest (1000 us, or neutral in --bidir) and stops.
+Examples:
+  python3 pwm_sweep.py --single                        # 3D test, one motor at a time
+  python3 pwm_sweep.py                                 # 3D test, singles + pairs + all
+  python3 pwm_sweep.py --single --kick-off 0 --rate 20 # find start points
+  python3 pwm_sweep.py --max-off 300 --kick-off 150
+
+Ctrl+C resets all channels to rest (neutral in 3D, 1000 us in --unidir) and stops.
 """
 
 import argparse
@@ -57,7 +60,7 @@ UPDATE_S = 0.02  # ramp update period (50 Hz)
 PERIOD_US = 20000.0
 CHIP = PWM_CHIP_FALLBACK
 ARGS = None
-REST_US = ARM_US  # 1000 us unidirectional, NEUTRAL in --bidir
+REST_US = ARM_US  # 1000 us unidirectional, NEUTRAL in bidirectional mode
 pwms = {}
 
 
@@ -90,12 +93,13 @@ def parse_args():
         default=None,
         help="force pwmchip number (default: auto-detect RP1 PWM0)",
     )
-    # Bidirectional options
+    # Mode
     ap.add_argument(
-        "--bidir",
+        "--unidir",
         action="store_true",
-        help="bidirectional (3D) test; ESCs must be in 3D mode",
+        help="old unidirectional mode (ESCs NOT in 3D mode; arms at 1000 us)",
     )
+    # Bidirectional options
     ap.add_argument(
         "--neutral", type=float, default=1500.0, help="3D neutral pulse in us"
     )
@@ -273,6 +277,7 @@ def sweep_bidir(motor_ids):
 def main():
     global PERIOD_US, CHIP, ARGS, REST_US
     ARGS = parse_args()
+    ARGS.bidir = not ARGS.unidir
     ARGS.max = min(ARGS.max, 2000.0)
     ARGS.max_off = min(ARGS.max_off, 500.0)
     ARGS.kick_off = min(ARGS.kick_off, ARGS.max_off)
@@ -286,12 +291,20 @@ def main():
     print(f"{ARGS.freq:.0f} Hz (period {PERIOD_US:.0f} us)")
 
     if ARGS.bidir:
-        print("\n*** BIDIRECTIONAL MODE ***")
+        print("\n*** BIDIRECTIONAL (3D) MODE ***")
         print(
             f"Arming at NEUTRAL {ARGS.neutral:.0f} us. If an ESC is NOT in 3D mode, this is ~50 % throttle."
         )
         input(
             "Propellers OFF, motors free to spin, ESCs set to 3D? Press Enter to continue (Ctrl+C to abort)..."
+        )
+    else:
+        print("\n*** UNIDIRECTIONAL MODE ***")
+        print(
+            f"Arming at {ARM_US:.0f} us. If the ESCs are in 3D mode, this is FULL REVERSE."
+        )
+        input(
+            "Propellers OFF and ESCs NOT in 3D mode? Press Enter to continue (Ctrl+C to abort)..."
         )
 
     mux_pins()
@@ -314,7 +327,7 @@ def main():
 
     ids = list(MOTORS.keys())
     phases = [("Individual Motors", list(itertools.combinations(ids, 1)))]
-    if not (ARGS.bidir and ARGS.single):
+    if not ARGS.single:
         phases += [
             ("Pairs of Motors", list(itertools.combinations(ids, 2))),
             ("All Motors", list(itertools.combinations(ids, 3))),
