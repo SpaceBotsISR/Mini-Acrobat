@@ -1,14 +1,14 @@
 """
 Smooth PWM sweep of the 3 ESCs (Raspberry Pi 5, RP1 hardware PWM).
-v5: tests ALL direction combinations; --auto runs unattended.
-v4: BIDIRECTIONAL (3D) is now the DEFAULT, because the ESCs are configured in
-3D mode (min 1168 / center 1500 / max 1832). The old unidirectional behaviour
+tests ALL direction combinations; --auto runs unattended.
+BIDIRECTIONAL (3D) is now the DEFAULT, because the ESCs are configured in
+3D mode (min 1168 / center 1500 / max 1832). Unidirectional behaviour
 is still available with --unidir, but in 3D mode it arms at 1000 us, which is
 FULL REVERSE, so it asks for confirmation first.
 
 ESC1 -> GPIO12 (PWM0_CHAN0) | ESC2 -> GPIO13 (PWM0_CHAN1) | ESC3 -> GPIO18 (PWM0_CHAN2)
 
-BIDIRECTIONAL (default). ESCs MUST already be in 3D mode (BlueJay/BLHeli_S).
+BIDIRECTIONAL (default).
   Rest/arm pulse is NEUTRAL (default 1500 us).
   For each combo, for each direction (forward, then reverse):
   1) KICK: neutral +/- --kick-off us for --kick-time s (skipped if --kick-off 0)
@@ -20,18 +20,18 @@ BIDIRECTIONAL (default). ESCs MUST already be in 3D mode (BlueJay/BLHeli_S).
   To find where the motor actually starts: --kick-off 0 --rate 20 and watch
   the printed us value when the motor begins to spin.
 
-UNIDIRECTIONAL (--unidir, only for ESCs NOT in 3D mode). For each motor combo:
+UNIDIRECTIONAL (--unidir, for ESCs NOT in 3D mode). For each motor combo:
   1) KICK: jump to --kick us for --kick-time s to break static friction
   2) continuous ramp  kick -> --max  at --rate us/s
   3) hold at --max for --hold s, ramp back down to idle, return to 1000 us
 
 Examples:
-  python3 pwm_sweep.py --single                        # 3D test, one motor at a time
-  python3 pwm_sweep.py                                 # 3D test, singles + pairs + all
-  python3 pwm_sweep.py --single --kick-off 0 --rate 20 # find start points
+  python3 pwm_sweep.py --single                                             # 3D test, one motor at a time
+  python3 pwm_sweep.py                                                      # 3D test, singles + pairs + all
+  python3 pwm_sweep.py --single --kick-off 0 --rate 20                      # find start points
   python3 pwm_sweep.py --max-off 300 --kick-off 150
-  python3 pwm_sweep.py --by-dir --max-pct 20 --dead-down 40 --dead-up 25   # equal thrust both ways
-  python3 pwm_sweep.py --by-dir --kick-off 0 --rate 15 --max-off 66   # direction check, ~20 %
+  python3 pwm_sweep.py --by-dir --max-pct 20 --dead-down 40 --dead-up 25    # equal thrust both ways
+  python3 pwm_sweep.py --by-dir --kick-off 0 --rate 15 --max-off 66         # direction check, ~20 %
 
 Ctrl+C resets all channels to rest (neutral in 3D, 1000 us in --unidir) and stops.
 """
@@ -56,9 +56,9 @@ MOTORS = {
 
 PWM_CHIP_FALLBACK = 0
 ARM_US = 1000
-IDLE_US = 1150  # just above the BLHeli_S default min throttle (1148 us)
+IDLE_US = 1150
 ARM_TIME = 3.0
-UPDATE_S = 0.02  # ramp update period (50 Hz)
+UPDATE_S = 0.02
 
 PERIOD_US = 20000.0
 CHIP = PWM_CHIP_FALLBACK
@@ -418,10 +418,10 @@ def main():
     if ARGS.bidir:
         print("\n*** BIDIRECTIONAL (3D) MODE ***")
         print(
-            f"Arming at NEUTRAL {ARGS.neutral:.0f} us. If an ESC is NOT in 3D mode, this is ~50 % throttle."
+            f"Arming at NEUTRAL {ARGS.neutral:.0f} us."
         )
         input(
-            "Propellers OFF, motors free to spin, ESCs set to 3D? Press Enter to continue (Ctrl+C to abort)..."
+            "Press Enter to continue (Ctrl+C to abort)"
         )
     else:
         print("\n*** UNIDIRECTIONAL MODE ***")
@@ -438,17 +438,8 @@ def main():
         p.start(us_to_duty(REST_US))
         pwms[m] = p
 
-    print(f"Arming motors for {ARM_TIME} seconds at {REST_US:.0f} us...")
+    print(f"Arming motors for {ARM_TIME} seconds at {REST_US:.0f} us")
     time.sleep(ARM_TIME)
-
-    if ARGS.bidir:
-        ans = input("Did ALL motors stay still at neutral? [y/N] ").strip().lower()
-        if ans != "y":
-            print(
-                "A motor spun at neutral -> that ESC is not in 3D mode (or neutral differs). Aborting."
-            )
-            stop_all()
-            return
 
     ids = list(MOTORS.keys())
     phases = [("Individual Motors", list(itertools.combinations(ids, 1)))]
