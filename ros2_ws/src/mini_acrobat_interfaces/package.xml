@@ -4,7 +4,7 @@
   <name>mini_acrobat_interfaces</name>
   <version>0.1.0</version>
   <description>Message definitions shared by the Mini-Acrobat nodes and the ground control app.</description>
-  <maintainer email="TODO@example.com">Francisco Branco</maintainer>
+  <maintainer email="kiko.castelobranco@gmail.com">Francisco Branco</maintainer>
   <license>MIT</license>
 
   <buildtool_depend>ament_cmake</buildtool_depend>
