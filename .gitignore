@@ -221,3 +221,48 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# ROS 2 / colcon, C++, Qt GCS, rosbags
+
+# Local virtualenv (name used on this machine)
+main-env/
+
+# colcon workspace output (build/ is already ignored above)
+install/
+log/
+ros2_ws/build/
+ros2_ws/install/
+ros2_ws/log/
+
+# C/C++ build artifacts
+*.o
+*.obj
+*.a
+*.d
+*.dylib
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+CTestTestfile.cmake
+compile_commands.json
+.clangd/
+
+# Qt (gcs/)
+*.pro.user*
+CMakeLists.txt.user*
+moc_*.cpp
+moc_*.h
+ui_*.h
+qrc_*.cpp
+build-*/
+
+# rosbag / telemetry recordings (large, regenerable)
+rosbag2_*/
+*.db3
+*.mcap
+*.bag
+
+# Secrets / keys (RPi access, VPN, etc.)
+.env.*
+*.pem
+*.key
