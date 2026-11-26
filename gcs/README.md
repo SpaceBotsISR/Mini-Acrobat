@@ -102,3 +102,14 @@ after 300 ms, like the real safety node should.
 On the Pi (ROS 2 Jazzy): `ros2 launch mini_acrobat_bringup bringup.launch.py`
 (safety node, link monitor, rosbridge on `:9090`, read-only Foxglove bridge on `:8765`).
 In MAgcs pick the mode and the drone, then **Connect**.
+
+## Icon
+
+`resources/magcs.png` (window icon) and `resources/MAgcs.icns` (bundle icon) are
+generated from the square artwork `resources/magcs_icon_source.png`, masked to
+the macOS rounded-square shape. To change the icon, replace that file, then:
+
+```bash
+python3 gcs/tools/icon/make_icon.py      # needs Pillow
+gcs/scripts/build_app.sh
+```

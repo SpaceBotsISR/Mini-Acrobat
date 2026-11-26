@@ -1,0 +1,22 @@
+# Mini-Acrobat drone side: safety_node + link_monitor + rosbridge (9090) + foxglove (8765).
+# Installed by tools/pi/install_service.sh (@USER@ / @WS@ are filled in there).
+[Unit]
+Description=Mini-Acrobat ROS 2 bringup (safety, link, rosbridge, foxglove)
+Wants=network-online.target
+After=network-online.target tailscaled.service
+
+[Service]
+Type=simple
+User=@USER@
+Environment=ROS_DOMAIN_ID=0
+Environment=PYTHONUNBUFFERED=1
+Environment=RCUTILS_LOGGING_BUFFERED_STREAM=0
+ExecStart=/bin/bash -c 'source /opt/ros/jazzy/setup.bash && source @WS@/install/setup.bash && exec ros2 launch mini_acrobat_bringup bringup.launch.py'
+# ros2 launch shuts its nodes down cleanly on SIGINT
+KillSignal=SIGINT
+TimeoutStopSec=10
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target

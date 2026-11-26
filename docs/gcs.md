@@ -74,6 +74,28 @@ sudo tailscale up --hostname=mini-acrobat
 sudo apt install iw            # SSID / bitrate for /link/status
 ```
 
+## Drone side always running (systemd)
+
+The drone side (`safety_node`, `link_monitor`, rosbridge `:9090`, foxglove
+`:8765`) runs as the `mini-acrobat` systemd service, so it starts on every boot
+and MAgcs can connect at any time. The safety node always boots **DISARMED**;
+nothing spins until MAgcs arms it and keeps sending heartbeats.
+
+```bash
+# on the Pi, once (deps + colcon build + install + start):
+tools/pi/install_service.sh
+
+systemctl status mini-acrobat              # state
+journalctl -u mini-acrobat -f              # live logs of all nodes
+sudo systemctl restart mini-acrobat        # after every colcon build
+sudo systemctl disable --now mini-acrobat  # back to running it by hand
+```
+
+The unit (`tools/pi/mini-acrobat.service.in`) runs as your user and sources
+`/opt/ros/jazzy` and `ros2_ws/install` itself (not `~/.bashrc`). With
+`--symlink-install`, Python and launch/config edits only need a restart; C++
+changes need `colcon build` first.
+
 ## Code layout (`gcs/src`)
 
 | Path | Role |
