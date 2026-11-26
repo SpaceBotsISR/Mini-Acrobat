@@ -42,12 +42,30 @@ def test_bad_band():
         EscBand(dead_up_us=400.0).validate()
 
 
-def test_sysfs_channel(tmp_path):
+def test_sysfs_channel(tmp_path, monkeypatch):
+    from mini_acrobat_hardware import pwm_sysfs
     from mini_acrobat_hardware.pwm_sysfs import PwmChannel
     ch = tmp_path / 'pwmchip0' / 'pwm2'
     ch.mkdir(parents=True)
     for f in ('period', 'duty_cycle', 'enable'):
         (ch / f).write_text('0')
+
+    def kernel_write(path, value):
+        # like the kernel: state with period 0 or duty > period -> EINVAL
+        name = os.path.basename(path)
+        period = int((ch / 'period').read_text())
+        duty = int((ch / 'duty_cycle').read_text())
+        if name == 'period':
+            period = int(value)
+        elif name == 'duty_cycle':
+            duty = int(value)
+        if name in ('period', 'duty_cycle') and (period == 0 or duty > period):
+            raise OSError(22, 'Invalid argument')
+        with open(path, 'w') as f:
+            f.write(value)
+
+    monkeypatch.setattr(PwmChannel, '_write', staticmethod(kernel_write))
+    assert pwm_sysfs  # imported for monkeypatch target
     pwm = PwmChannel(0, 2, sysfs_root=str(tmp_path))
     pwm.configure(2_500_000)
     assert (ch / 'period').read_text() == '2500000'
@@ -58,3 +76,8 @@ def test_sysfs_channel(tmp_path):
     pwm.disable()
     assert (ch / 'duty_cycle').read_text() == '0'
     assert (ch / 'enable').read_text() == '0'
+    # re-configure to a shorter period than a leftover duty
+    pwm.set_duty(2_000_000)
+    pwm.configure(1_000_000)
+    assert (ch / 'period').read_text() == '1000000'
+    assert (ch / 'duty_cycle').read_text() == '0'

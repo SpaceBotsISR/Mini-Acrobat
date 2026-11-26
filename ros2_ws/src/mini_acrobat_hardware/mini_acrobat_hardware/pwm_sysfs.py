@@ -51,13 +51,32 @@ class PwmChannel:
     def _set(self, name: str, value: int) -> None:
         self._write(os.path.join(self.dir, name), str(int(value)))
 
+    def _get(self, name: str) -> int:
+        try:
+            with open(os.path.join(self.dir, name)) as f:
+                return int(f.read().strip() or 0)
+        except (OSError, ValueError):
+            return 0
+
     def configure(self, period_ns: int) -> None:
-        """Disable, zero the duty, then set the period (duty must stay <= period)."""
-        self.disable()
-        self._set('duty_cycle', 0)
-        self.duty_ns = 0
+        """Channel off, then period, then duty 0.
+
+        The kernel rejects (EINVAL) any state with period == 0 or duty > period,
+        and a freshly exported channel has period 0: so the period must be
+        written before the duty. If an old duty is longer than the new period,
+        it is zeroed first (allowed because the old period is then non-zero).
+        """
+        try:
+            self._set('enable', 0)
+        except OSError:
+            pass
+        self.enabled = False
+        if self._get('duty_cycle') > period_ns:
+            self._set('duty_cycle', 0)
         self._set('period', period_ns)
         self.period_ns = period_ns
+        self._set('duty_cycle', 0)
+        self.duty_ns = 0
 
     def set_duty(self, duty_ns: int) -> None:
         duty_ns = max(0, min(self.period_ns, int(duty_ns)))
