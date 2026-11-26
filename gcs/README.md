@@ -15,10 +15,16 @@ gcs/scripts/build_app.sh                 # -> /Applications/MAgcs.app
 # or: gcs/scripts/build_app.sh ~/Applications
 ```
 
-The script builds Release/arm64, installs the bundle, runs `macdeployqt` (Qt
-frameworks and plugins copied into `MAgcs.app`, so it no longer depends on
-Homebrew's Qt) and ad-hoc signs it. Open **MAgcs** from Launchpad/Spotlight like
-any other app. Re-run the script after pulling changes.
+The script builds Release/arm64, copies the Qt frameworks and the Cocoa plugin
+into `MAgcs.app` (so it no longer depends on Homebrew's Qt), checks nothing
+still links into Homebrew, ad-hoc signs it and replaces the installed app
+(details in `docs/gcs.md`, *Packaging*). Open **MAgcs** from Launchpad/Spotlight like
+any other app.
+
+Iterating: re-run `gcs/scripts/build_app.sh` after every change. It recompiles
+only what changed (`gcs/build-release`), quits the running MAgcs, replaces the
+installed bundle and opens the new one. `--no-open` skips opening, `--clean`
+rebuilds from scratch.
 
 The app is not notarised: if macOS ever blocks it (e.g. after copying it to
 another Mac), right-click > Open once.
@@ -40,8 +46,9 @@ builds on macOS.
 
 On start MAgcs opens **Connect to Mini-Acrobat**:
 
-- **Tailscale (VPN)**: state of Tailscale on this Mac, the tailnet's devices
-  (online / offline, direct or relayed path), the drone's host and a path test
+- **Tailscale (VPN)**: state of Tailscale on this Mac and of the drone's device
+  only (online / offline, Tailscale IP; the rest of the tailnet is never shown),
+  and a path test
   (`tailscale ping`: direct vs DERP relay, round-trip time). Warns when the path
   is relayed or slower than 150 ms (heartbeat timeout is 300 ms).
 - **Manual (IP / hostname)**: same network (phone hotspot), `raspberrypi.local` or an IP.

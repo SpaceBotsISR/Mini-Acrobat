@@ -10,7 +10,6 @@ class QListWidget;
 class QPushButton;
 class QSpinBox;
 class QStackedWidget;
-class QTreeWidget;
 
 namespace magcs {
 
@@ -20,8 +19,9 @@ class NetworkMonitor;
 // "Connect to Mini-Acrobat" window. Shown when MAgcs starts (Startup) and from
 // Connection > Connect to drone... (Change).
 //
-// Left: connection modes. Right: the mode's page (Tailscale: tailnet state,
-// peer list, path test; Manual: host; Simulator: fake drone) with its "how to
+// Left: connection modes. Right: the mode's page (Tailscale: state of this
+// Mac and of the drone's device only, path test; Manual: host; Simulator: fake
+// drone) with its "how to
 // connect" steps. Bottom: this Mac's Wi-Fi / IPs and the rosbridge port.
 // Connect -> Drone::connectTo(); the dialog closes once rosbridge is connected.
 class ConnectDialog : public QDialog {
@@ -58,8 +58,9 @@ private:
   QStackedWidget* m_pages;
 
   QLabel* m_tsState;
-  QTreeWidget* m_peers;
   QLineEdit* m_tsHost;
+  QLabel* m_tsDevice;
+  QLabel* m_tsIp;
   QLabel* m_tsPath;
   QLabel* m_tsWarn;
   QPushButton* m_tsTest;

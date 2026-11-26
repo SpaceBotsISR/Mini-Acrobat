@@ -49,7 +49,7 @@ and diagnostics. The last mode/host is kept in `QSettings` (host per mode).
 
 | Mode | Host | Diagnostics |
 |---|---|---|
-| Tailscale (VPN) | MagicDNS name (`mini-acrobat`) or 100.x IP | tailnet state and devices (`tailscale status --json`), path test every 5 s (`tailscale ping -c 1`): direct vs DERP relay + RTT |
+| Tailscale (VPN) | MagicDNS name (`mini-acrobat`) or 100.x IP | Tailscale state of this Mac and of the drone's device only (`tailscale status --json`; other tailnet devices are never shown), path test every 5 s (`tailscale ping -c 1`): direct vs DERP relay + RTT |
 | Manual | `raspberrypi.local` / IP | - |
 | Simulator | `localhost` | - |
 
@@ -95,12 +95,24 @@ New feature = a new widget that only talks to `Drone`, plus a new topic in
 
 ## Packaging (macOS)
 
-`gcs/scripts/build_app.sh` -> Release arm64 build, `cmake --install` into
-`/Applications`, which runs Qt's deploy script (`macdeployqt`: Qt frameworks and
-plugins inside the bundle) and `codesign --sign -` (ad-hoc; Apple Silicon needs a
-valid signature after the binaries are rewritten). Bundle metadata:
-`gcs/cmake/Info.plist.in` (id `pt.ulisboa.tecnico.isr.magcs`, icon
-`resources/MAgcs.icns`, Location / local-network usage strings).
+`gcs/scripts/build_app.sh`: incremental Release arm64 build in
+`gcs/build-release`, then in a staging copy of the bundle: only the Cocoa
+platform plugin is added, `macdeployqt -no-plugins -libpath=$(brew --prefix)/lib`
+copies the Qt frameworks and their Homebrew dylibs in, `qt.conf` points to
+`PlugIns`, a check fails the build if anything still links into Homebrew, and
+the bundle is ad-hoc signed (Apple Silicon needs a valid signature after the
+binaries are rewritten). Only then the running MAgcs is quit, the installed app
+replaced and reopened.
+
+Plain `macdeployqt` does not work with Homebrew's Qt: Qt is split in one keg
+per module and the default plugin set (PDF, SVG, WebP, virtual keyboard) needs
+frameworks from kegs it does not search. MAgcs needs none of them. If a future
+feature needs a plugin (e.g. `imageformats/libqjpeg` or `tls/`), copy it the
+same way as `libqcocoa` and add another `-executable=` to the script.
+
+Bundle metadata: `gcs/cmake/Info.plist.in` (id `pt.ulisboa.tecnico.isr.magcs`,
+icon `resources/MAgcs.icns`, Location / local-network usage strings). The
+deployment target is the running macOS (Homebrew's Qt is built for it anyway).
 
 ## Foxglove
 

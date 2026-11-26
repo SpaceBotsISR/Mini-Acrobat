@@ -4,8 +4,13 @@ cmake_minimum_required(VERSION 3.21)
 if(APPLE AND NOT CMAKE_OSX_ARCHITECTURES)
   set(CMAKE_OSX_ARCHITECTURES "arm64" CACHE STRING "")
 endif()
+# Homebrew's Qt is built for the running macOS, so target it too (avoids
+# "linking with dylib built for newer version" warnings).
 if(APPLE AND NOT CMAKE_OSX_DEPLOYMENT_TARGET)
-  set(CMAKE_OSX_DEPLOYMENT_TARGET "13.0" CACHE STRING "")
+  execute_process(COMMAND sw_vers -productVersion OUTPUT_VARIABLE _macos_ver
+                  OUTPUT_STRIP_TRAILING_WHITESPACE)
+  string(REGEX MATCH "^[0-9]+" _macos_major "${_macos_ver}")
+  set(CMAKE_OSX_DEPLOYMENT_TARGET "${_macos_major}.0" CACHE STRING "")
 endif()
 
 project(MAgcs VERSION 0.2.0 LANGUAGES CXX)
@@ -112,26 +117,12 @@ set_target_properties(MAgcs PROPERTIES
   MACOSX_BUNDLE_COPYRIGHT "ISR Lisboa - Mini-Acrobat"
 )
 
-# ---- install: self-contained MAgcs.app ----------------------------------------
-# macOS:  cmake --install build --prefix /Applications   (or ~/Applications)
-# macdeployqt copies the Qt frameworks/plugins into the bundle, then the bundle
-# is ad-hoc signed (required on Apple Silicon after its binaries are modified).
+# ---- install -----------------------------------------------------------------
+# macOS: the self-contained bundle (Qt inside, signed) is made by
+# scripts/build_app.sh, which handles Homebrew's split Qt kegs; this only
+# installs the plain bundle.
 if(APPLE)
   install(TARGETS MAgcs BUNDLE DESTINATION .)
-  qt_generate_deploy_app_script(
-    TARGET MAgcs
-    OUTPUT_SCRIPT magcs_deploy_script
-    NO_UNSUPPORTED_PLATFORM_ERROR
-  )
-  install(SCRIPT ${magcs_deploy_script})
-  install(CODE [[
-    set(_app "${CMAKE_INSTALL_PREFIX}/MAgcs.app")
-    message(STATUS "Ad-hoc signing ${_app}")
-    execute_process(COMMAND codesign --force --deep --sign - "${_app}" RESULT_VARIABLE _rc)
-    if(NOT _rc EQUAL 0)
-      message(FATAL_ERROR "codesign failed for ${_app}")
-    endif()
-  ]])
 else()
   include(GNUInstallDirs)
   install(TARGETS MAgcs RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})

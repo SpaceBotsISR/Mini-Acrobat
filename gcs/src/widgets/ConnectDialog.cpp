@@ -3,14 +3,12 @@
 #include <QDialogButtonBox>
 #include <QFormLayout>
 #include <QHBoxLayout>
-#include <QHeaderView>
 #include <QLabel>
 #include <QLineEdit>
 #include <QListWidget>
 #include <QPushButton>
 #include <QSpinBox>
 #include <QStackedWidget>
-#include <QTreeWidget>
 #include <QVBoxLayout>
 
 #include "core/Drone.hpp"
@@ -25,8 +23,6 @@ using Mode = ConnectionTarget::Mode;
 namespace {
 
 const Mode kModes[] = {Mode::Tailscale, Mode::Manual, Mode::Simulator};
-
-enum PeerColumn { ColName, ColIp, ColOs, ColStatus, ColPath, ColCount };
 
 }  // namespace
 
@@ -170,27 +166,17 @@ QWidget* ConnectDialog::buildTailscalePage()
   stateRow->addWidget(m_tsState, 1);
   stateRow->addWidget(refresh);
 
-  m_peers = new QTreeWidget;
-  m_peers->setColumnCount(ColCount);
-  m_peers->setHeaderLabels({tr("Device"), tr("Tailscale IP"), tr("OS"), tr("Status"), tr("Path")});
-  m_peers->setRootIsDecorated(false);
-  m_peers->setUniformRowHeights(true);
-  m_peers->header()->setSectionResizeMode(QHeaderView::ResizeToContents);
-  m_peers->header()->setStretchLastSection(true);
-  m_peers->setMinimumHeight(140);
-  connect(m_peers, &QTreeWidget::itemClicked, this, [this](QTreeWidgetItem* item) {
-    m_tsHost->setText(item->data(ColName, Qt::UserRole).toString());
-    updatePingTarget();
-  });
-  connect(m_peers, &QTreeWidget::itemDoubleClicked, this, [this](QTreeWidgetItem* item) {
-    m_tsHost->setText(item->data(ColName, Qt::UserRole).toString());
-    startConnect();
-  });
-
+  // Only the drone's device is shown, never the rest of the tailnet.
   m_tsHost = new QLineEdit;
-  m_tsHost->setPlaceholderText(tr("MagicDNS name or 100.x IP, e.g. mini-acrobat"));
+  m_tsHost->setPlaceholderText(tr("drone's Tailscale name or 100.x IP, e.g. mini-acrobat"));
+  connect(m_tsHost, &QLineEdit::textEdited, this, &ConnectDialog::refreshTailscale);
   connect(m_tsHost, &QLineEdit::editingFinished, this, &ConnectDialog::updatePingTarget);
   connect(m_tsHost, &QLineEdit::returnPressed, this, &ConnectDialog::startConnect);
+
+  m_tsDevice = new QLabel;
+  m_tsDevice->setWordWrap(true);
+  m_tsIp = new QLabel;
+  m_tsIp->setTextInteractionFlags(Qt::TextSelectableByMouse);
 
   m_tsPath = new QLabel;
   m_tsPath->setTextInteractionFlags(Qt::TextSelectableByMouse);
@@ -209,6 +195,8 @@ QWidget* ConnectDialog::buildTailscalePage()
 
   auto* form = new QFormLayout;
   form->addRow(tr("Drone"), m_tsHost);
+  form->addRow(tr("Device"), m_tsDevice);
+  form->addRow(tr("Tailscale IP"), m_tsIp);
   form->addRow(tr("Path"), pathRow);
   form->addRow(QString(), m_tsWarn);
 
@@ -220,16 +208,16 @@ QWidget* ConnectDialog::buildTailscalePage()
     "<li>The drone needs internet (phone hotspot or any Wi-Fi) for Tailscale to come up. "
     "Mac and drone on the <i>same</i> network give a <b>direct</b> path; otherwise traffic is "
     "relayed (DERP) and too slow for the 300 ms heartbeat.</li>"
-    "<li>Pick the drone in the list (or type its name / 100.x IP) and press <b>Connect</b>. "
+    "<li>Type the drone's Tailscale name (or 100.x IP) above and press <b>Connect</b>. "
     "On the drone <code>ros2 launch mini_acrobat_bringup bringup.launch.py</code> must be "
     "running.</li></ol>"));
 
   auto* v = new QVBoxLayout(page);
   v->setContentsMargins(0, 0, 0, 0);
   v->addLayout(stateRow);
-  v->addWidget(m_peers, 1);
   v->addLayout(form);
   v->addWidget(help);
+  v->addStretch();
   return page;
 }
 
@@ -304,7 +292,15 @@ void ConnectDialog::onModeChanged()
 
 void ConnectDialog::updatePingTarget()
 {
-  m_monitor->setPingTarget(currentMode() == Mode::Tailscale ? m_tsHost->text() : QString());
+  // Probe only the drone, and only once Tailscale knows it and it is online.
+  QString target;
+  if (currentMode() == Mode::Tailscale) {
+    const tailscale::Node* n = m_monitor->tailscale().findPeer(m_tsHost->text());
+    if (n && n->online) {
+      target = m_tsHost->text().trimmed();
+    }
+  }
+  m_monitor->setPingTarget(target);
 }
 
 void ConnectDialog::refreshTailscale()
@@ -313,41 +309,29 @@ void ConnectDialog::refreshTailscale()
   m_tsState->setText(linktext::tailscaleState(s));
 
   const QString host = m_tsHost->text().trimmed();
-  const tailscale::Node* selected = s.findPeer(host);
-  m_peers->clear();
-  for (const tailscale::Node& n : s.peers) {
-    auto* item = new QTreeWidgetItem;
-    item->setText(ColName, n.shortName());
-    // What to connect to: the MagicDNS short name if there is one, else the IP.
-    item->setData(ColName, Qt::UserRole, n.dnsName.isEmpty() ? n.ipv4() : n.shortName());
-    item->setText(ColIp, n.ipv4());
-    item->setText(ColOs, n.os);
-    item->setText(ColStatus, n.online ? tr("online") : tr("offline"));
-    item->setForeground(ColStatus, QColor(n.online ? "#1a7f37" : "#888888"));
-    item->setText(ColPath, n.connectionText());
-    if (!n.online) {
-      for (int c : {ColName, ColIp, ColOs, ColPath}) {
-        item->setForeground(c, QColor("#888888"));
-      }
-    }
-    m_peers->addTopLevelItem(item);
-    if (selected && n.hostName == selected->hostName && n.ips == selected->ips) {
-      item->setSelected(true);
-      m_peers->setCurrentItem(item);
-    }
+  const tailscale::Node* n = s.running() ? s.findPeer(host) : nullptr;
+  if (!s.running()) {
+    m_tsDevice->setText(QStringLiteral("-"));
+    m_tsIp->setText(QStringLiteral("-"));
+  } else if (host.isEmpty()) {
+    m_tsDevice->setText(tr("<span style='color:gray'>enter the drone's name</span>"));
+    m_tsIp->setText(QStringLiteral("-"));
+  } else if (!n) {
+    m_tsDevice->setText(
+      tr("<span style='color:#b08800'>'%1' is not in your tailnet yet: set up Tailscale on the "
+         "drone (step 2 below), or check the name.</span>")
+        .arg(host.toHtmlEscaped()));
+    m_tsIp->setText(QStringLiteral("-"));
+  } else {
+    const QString state = n->online
+      ? tr("<span style='color:#1a7f37'><b>online</b></span>")
+      : tr("<span style='color:#c0392b'><b>offline</b></span> (drone off, no internet, or "
+           "tailscaled not running)");
+    m_tsDevice->setText(QStringLiteral("%1 · %2 · %3")
+                          .arg(n->shortName().toHtmlEscaped(), n->os.toHtmlEscaped(), state));
+    m_tsIp->setText(n->ipv4());
   }
-  if (s.running() && s.peers.isEmpty()) {
-    m_tsState->setText(m_tsState->text() + tr("<br>No other devices in this tailnet yet."));
-  } else if (s.running() && !host.isEmpty() && !selected) {
-    m_tsState->setText(m_tsState->text() +
-                       tr("<br><span style='color:#b08800'>'%1' is not in this tailnet.</span>")
-                         .arg(host.toHtmlEscaped()));
-  } else if (selected && !selected->online) {
-    m_tsState->setText(m_tsState->text() +
-                       tr("<br><span style='color:#c0392b'>%1 is offline (drone off, no internet, "
-                          "or tailscaled not running).</span>")
-                         .arg(selected->shortName().toHtmlEscaped()));
-  }
+  updatePingTarget();
 }
 
 void ConnectDialog::refreshPing()
