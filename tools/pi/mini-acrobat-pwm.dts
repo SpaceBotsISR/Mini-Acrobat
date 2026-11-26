@@ -1,0 +1,33 @@
+// Mini-Acrobat ESC PWM for the Raspberry Pi 5 (RP1).
+// Enables RP1 PWM0 and muxes its outputs to the header, with pull-downs so the
+// ESC inputs never float (also while disarmed and during boot):
+//   GPIO12 = PWM0 ch0 (ESC1) | GPIO13 = PWM0 ch1 (ESC2) | GPIO18 = PWM0 ch2 (ESC3)
+// Build:  dtc -@ -I dts -O dtb -o mini-acrobat-pwm.dtbo mini-acrobat-pwm.dts
+// Use:    copy to /boot/firmware/overlays/, add "dtoverlay=mini-acrobat-pwm"
+//         to /boot/firmware/config.txt, reboot (tools/pi/install_service.sh).
+/dts-v1/;
+/plugin/;
+
+/ {
+	compatible = "brcm,bcm2712";
+
+	fragment@0 {
+		target = <&rp1_gpio>;
+		__overlay__ {
+			mini_acrobat_pwm_pins: mini_acrobat_pwm_pins {
+				function = "pwm0";
+				pins = "gpio12", "gpio13", "gpio18";
+				bias-pull-down;
+			};
+		};
+	};
+
+	fragment@1 {
+		target = <&rp1_pwm0>;
+		__overlay__ {
+			pinctrl-names = "default";
+			pinctrl-0 = <&mini_acrobat_pwm_pins>;
+			status = "okay";
+		};
+	};
+};

@@ -20,9 +20,8 @@ for d in /sys/class/pwm/pwmchip*; do
 done
 
 if [[ -z "$chip_dir" ]]; then
-  echo "pwm_setup: RP1 PWM0 ($ADDR) not found. Add to /boot/firmware/config.txt:" >&2
-  echo "  dtoverlay=pwm-2chan,pin=12,func=4,pin2=13,func2=4" >&2
-  echo "and reboot (tools/pi/install_service.sh does this)." >&2
+  echo "pwm_setup: RP1 PWM0 ($ADDR) not found. Install the overlay with" >&2
+  echo "  tools/pi/install_service.sh   (adds dtoverlay=mini-acrobat-pwm) and reboot." >&2
   exit 1
 fi
 
@@ -50,15 +49,13 @@ for ch in "${CHANNELS[@]}"; do
   done
 done
 
-# Pin mux (+ pull-down so the ESC inputs never float). Needs `pinctrl`
-# (raspi-utils). The overlay already muxes GPIO12/13; GPIO18 needs pinctrl.
+# Pin mux + pull-downs are done by the mini-acrobat-pwm overlay. If `pinctrl`
+# happens to be installed, re-assert them (harmless otherwise).
 if command -v pinctrl >/dev/null; then
   for p in "${PINS[@]}"; do
     read -r gpio alt <<< "$p"
     pinctrl set "$gpio" "$alt" pd
   done
-else
-  echo "pwm_setup: WARNING pinctrl not found (sudo apt install raspi-utils): GPIO18 / ESC3 not muxed" >&2
 fi
 
 echo "pwm_setup: $(basename "$chip_dir") ch${CHANNELS[*]} ready for $RUN_USER, output OFF"

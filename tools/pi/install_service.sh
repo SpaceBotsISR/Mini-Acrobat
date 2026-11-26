@@ -33,19 +33,39 @@ set +u; source /opt/ros/jazzy/setup.bash; set -u
 if [[ $BUILD -eq 1 ]]; then
   echo "==> dependencies"
   sudo apt-get install -y ros-jazzy-rosbridge-suite ros-jazzy-foxglove-bridge iw
-  sudo apt-get install -y raspi-utils || echo "warning: raspi-utils (pinctrl) not installed; GPIO18/ESC3 will not be muxed"
+  sudo apt-get install -y device-tree-compiler
   rosdep install --from-paths "$WS/src" --ignore-src -y
   echo "==> colcon build"
   (cd "$WS" && colcon build --symlink-install)
 fi
 
-# RP1 hardware PWM (GPIO12/13/18) must be enabled by a device-tree overlay.
+# RP1 hardware PWM0 (GPIO12/13/18) is enabled by our own overlay
+# (tools/pi/mini-acrobat-pwm.dts). The stock pwm-2chan overlay does NOT work on
+# the Pi 5: it enables the SoC PWM (107d517a80), not RP1 PWM0 (1f00098000).
 CONFIG=/boot/firmware/config.txt
-OVERLAY="dtoverlay=pwm-2chan,pin=12,func=4,pin2=13,func2=4"
+DTS="$REPO/tools/pi/mini-acrobat-pwm.dts"
+DTBO=/boot/firmware/overlays/mini-acrobat-pwm.dtbo
 NEED_REBOOT=0
-if ! grep -qE '^dtoverlay=pwm-2chan' "$CONFIG"; then
-  echo "==> enabling RP1 PWM in $CONFIG (reboot needed)"
-  printf '\n# Mini-Acrobat ESCs: RP1 PWM0 (GPIO12/13; GPIO18 muxed by tools/pi/pwm_setup.sh)\n%s\n' "$OVERLAY" \
+for sym in rp1_pwm0 rp1_gpio; do
+  [[ -e /proc/device-tree/__symbols__/$sym ]] || { echo "error: device-tree symbol '$sym' not found (not a Pi 5?)" >&2; exit 1; }
+done
+command -v dtc >/dev/null || sudo apt-get install -y device-tree-compiler
+TMP_DTBO="$(mktemp --suffix=.dtbo)"
+dtc -q -@ -I dts -O dtb -o "$TMP_DTBO" "$DTS"
+if ! sudo cmp -s "$TMP_DTBO" "$DTBO" 2>/dev/null; then
+  echo "==> installing $DTBO"
+  sudo install -m 644 "$TMP_DTBO" "$DTBO"
+  NEED_REBOOT=1
+fi
+rm -f "$TMP_DTBO"
+if grep -qE '^dtoverlay=pwm-2chan' "$CONFIG"; then
+  echo "==> removing the old pwm-2chan overlay from $CONFIG"
+  sudo sed -i -E 's/^(dtoverlay=pwm-2chan.*)$/# \1   (replaced by mini-acrobat-pwm)/' "$CONFIG"
+  NEED_REBOOT=1
+fi
+if ! grep -qE '^dtoverlay=mini-acrobat-pwm' "$CONFIG"; then
+  echo "==> enabling RP1 PWM0 in $CONFIG"
+  printf '\n# Mini-Acrobat ESCs: RP1 PWM0 on GPIO12/13/18 (tools/pi/mini-acrobat-pwm.dts)\n[all]\ndtoverlay=mini-acrobat-pwm\n' \
     | sudo tee -a "$CONFIG" >/dev/null
   NEED_REBOOT=1
 fi
@@ -57,7 +77,7 @@ sudo systemctl daemon-reload
 sudo systemctl enable mini-acrobat.service
 if [[ $NEED_REBOOT -eq 1 ]]; then
   echo
-  echo "PWM overlay added: run 'sudo reboot'. The service starts by itself after the reboot."
+  echo "PWM overlay installed/changed: run 'sudo reboot'. The service starts by itself after the reboot."
   exit 0
 fi
 sudo systemctl restart mini-acrobat.service

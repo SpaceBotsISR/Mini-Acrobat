@@ -98,8 +98,11 @@ sudo systemctl disable --now mini-acrobat  # back to running it by hand
 stops for 100 ms; on every arm the ESCs get 1 s of neutral first (they beep
 and arm). `tools/pi/pwm_setup.sh` runs as root before the service (export
 channels, `pinctrl` mux + pull-down, sysfs ownership) and after it (PWM off).
-The install script adds `dtoverlay=pwm-2chan,pin=12,func=4,pin2=13,func2=4` to
-`/boot/firmware/config.txt` (reboot once).
+RP1 PWM0 is enabled by our own overlay `tools/pi/mini-acrobat-pwm.dts`
+(pin mux + pull-downs on GPIO12/13/18); the install script compiles it into
+`/boot/firmware/overlays/` and adds `dtoverlay=mini-acrobat-pwm` to
+`config.txt` (reboot once). The stock `pwm-2chan` overlay does not work on the
+Pi 5: it enables the SoC PWM (`107d517a80`), not RP1 PWM0 (`1f00098000`).
 
 The unit (`tools/pi/mini-acrobat.service.in`) runs as your user and sources
 `/opt/ros/jazzy` and `ros2_ws/install` itself (not `~/.bashrc`). With
