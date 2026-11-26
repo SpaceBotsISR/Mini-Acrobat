@@ -1,0 +1,16 @@
+# ESC driver (BLHeli_S, 3D mode). Values from the bench sweeps (tools/pwm_sweep).
+esc_node:
+  ros__parameters:
+    pwm_chip: -1                     # -1 = auto (RP1 PWM0 at 1f00098000)
+    pwm_channels: [0, 1, 2]          # ESC1 GPIO12, ESC2 GPIO13, ESC3 GPIO18
+    pwm_freq_hz: 400.0               # BLHeli_S accepts 50..500 Hz
+    neutral_us: 1500.0               # 3D centre
+    full_us: 332.0                   # 1168 / 1500 / 1832 -> 332 us each side
+    dead_up_us: 40.0                 # motor starts at neutral + this
+    dead_down_us: 40.0               # motor starts at neutral - this
+    min_us: 1168.0
+    max_us: 1832.0
+    invert: [false, false, false]    # software direction inversion per motor
+    cmd_timeout_ms: 100.0            # /motor_cmd comes at 50 Hz; 5 missed -> PWM OFF
+    arm_neutral_ms: 1000.0           # neutral hold after each PWM OFF -> ON
+    update_rate_hz: 100.0

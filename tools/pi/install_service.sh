@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # Run ON THE PI (Ubuntu 24.04 + ROS 2 Jazzy). Builds ros2_ws and installs the
-# mini-acrobat systemd service, so the drone side (safety_node, link_monitor,
-# rosbridge :9090, foxglove :8765) starts on every boot and is always ready
-# for MAgcs. The safety node always boots DISARMED.
+# mini-acrobat systemd service, so the drone side (safety_node, esc_node,
+# link_monitor, rosbridge :9090, foxglove :8765) starts on every boot and is
+# always ready for MAgcs. The safety node always boots DISARMED, and esc_node
+# emits no PWM until the drone is armed.
 #
 #   tools/pi/install_service.sh            # deps + build + install + start
 #   tools/pi/install_service.sh --no-build # only (re)install the unit
@@ -32,15 +33,33 @@ set +u; source /opt/ros/jazzy/setup.bash; set -u
 if [[ $BUILD -eq 1 ]]; then
   echo "==> dependencies"
   sudo apt-get install -y ros-jazzy-rosbridge-suite ros-jazzy-foxglove-bridge iw
+  sudo apt-get install -y raspi-utils || echo "warning: raspi-utils (pinctrl) not installed; GPIO18/ESC3 will not be muxed"
   rosdep install --from-paths "$WS/src" --ignore-src -y
   echo "==> colcon build"
   (cd "$WS" && colcon build --symlink-install)
 fi
 
+# RP1 hardware PWM (GPIO12/13/18) must be enabled by a device-tree overlay.
+CONFIG=/boot/firmware/config.txt
+OVERLAY="dtoverlay=pwm-2chan,pin=12,func=4,pin2=13,func2=4"
+NEED_REBOOT=0
+if ! grep -qE '^dtoverlay=pwm-2chan' "$CONFIG"; then
+  echo "==> enabling RP1 PWM in $CONFIG (reboot needed)"
+  printf '\n# Mini-Acrobat ESCs: RP1 PWM0 (GPIO12/13; GPIO18 muxed by tools/pi/pwm_setup.sh)\n%s\n' "$OVERLAY" \
+    | sudo tee -a "$CONFIG" >/dev/null
+  NEED_REBOOT=1
+fi
+chmod +x "$REPO/tools/pi/pwm_setup.sh"
+
 echo "==> installing $UNIT (user=$RUN_USER, ws=$WS)"
-sed -e "s#@USER@#$RUN_USER#g" -e "s#@WS@#$WS#g" "$UNIT_IN" | sudo tee "$UNIT" >/dev/null
+sed -e "s#@USER@#$RUN_USER#g" -e "s#@WS@#$WS#g" -e "s#@REPO@#$REPO#g" "$UNIT_IN" | sudo tee "$UNIT" >/dev/null
 sudo systemctl daemon-reload
 sudo systemctl enable mini-acrobat.service
+if [[ $NEED_REBOOT -eq 1 ]]; then
+  echo
+  echo "PWM overlay added: run 'sudo reboot'. The service starts by itself after the reboot."
+  exit 0
+fi
 sudo systemctl restart mini-acrobat.service
 
 sleep 3

@@ -76,8 +76,8 @@ sudo apt install iw            # SSID / bitrate for /link/status
 
 ## Drone side always running (systemd)
 
-The drone side (`safety_node`, `link_monitor`, rosbridge `:9090`, foxglove
-`:8765`) runs as the `mini-acrobat` systemd service, so it starts on every boot
+The drone side (`safety_node`, `esc_node`, `link_monitor`, rosbridge `:9090`,
+foxglove `:8765`) runs as the `mini-acrobat` systemd service, so it starts on every boot
 and MAgcs can connect at any time. The safety node always boots **DISARMED**;
 nothing spins until MAgcs arms it and keeps sending heartbeats.
 
@@ -90,6 +90,16 @@ journalctl -u mini-acrobat -f              # live logs of all nodes
 sudo systemctl restart mini-acrobat        # after every colcon build
 sudo systemctl disable --now mini-acrobat  # back to running it by hand
 ```
+
+**ESC PWM** (`mini_acrobat_hardware/esc_node`, config `config/esc.yaml`):
+`/motor_cmd` -> RP1 hardware PWM, ESC1 GPIO12 / ESC2 GPIO13 / ESC3 GPIO18,
+400 Hz, 3D band 1168/1500/1832 us with the deadzone skipped (same law as
+`tools/pwm_sweep --max-pct`). No PWM at all while disarmed or if `/motor_cmd`
+stops for 100 ms; on every arm the ESCs get 1 s of neutral first (they beep
+and arm). `tools/pi/pwm_setup.sh` runs as root before the service (export
+channels, `pinctrl` mux + pull-down, sysfs ownership) and after it (PWM off).
+The install script adds `dtoverlay=pwm-2chan,pin=12,func=4,pin2=13,func2=4` to
+`/boot/firmware/config.txt` (reboot once).
 
 The unit (`tools/pi/mini-acrobat.service.in`) runs as your user and sources
 `/opt/ros/jazzy` and `ros2_ws/install` itself (not `~/.bashrc`). With

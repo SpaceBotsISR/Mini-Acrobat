@@ -1,12 +1,14 @@
 """Starts the drone side of Mini-Acrobat:
 
   safety_node        arm/disarm state machine + GCS link watchdog
+  esc_node           /motor_cmd -> RP1 hardware PWM on GPIO12/13/18 (no PWM while disarmed)
   link_monitor       drone network status on /link/status (Wi-Fi signal, IPs, Tailscale)
   rosbridge_server   WebSocket for the MAgcs app (control + data), port 9090
   foxglove_bridge    read-only WebSocket for Foxglove (data only), port 8765
 
   ros2 launch mini_acrobat_bringup bringup.launch.py
   ros2 launch mini_acrobat_bringup bringup.launch.py foxglove:=false rosbridge_port:=9091
+  ros2 launch mini_acrobat_bringup bringup.launch.py esc:=false   # no PWM (e.g. on the Mac)
 """
 import os
 
@@ -30,8 +32,19 @@ def generate_launch_description():
         DeclareLaunchArgument('foxglove', default_value='true'),
         DeclareLaunchArgument('foxglove_port', default_value='8765'),
         DeclareLaunchArgument('wifi_interface', default_value='wlan0'),
+        DeclareLaunchArgument('esc', default_value='true'),
 
         IncludeLaunchDescription(PythonLaunchDescriptionSource(safety_launch)),
+
+        Node(
+            package='mini_acrobat_hardware',
+            executable='esc_node',
+            name='esc_node',
+            output='screen',
+            condition=IfCondition(LaunchConfiguration('esc')),
+            parameters=[os.path.join(
+                get_package_share_directory('mini_acrobat_hardware'), 'config', 'esc.yaml')],
+        ),
 
         Node(
             package='mini_acrobat_link',

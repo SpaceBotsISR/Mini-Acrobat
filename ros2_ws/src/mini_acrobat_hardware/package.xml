@@ -1,0 +1,18 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>mini_acrobat_hardware</name>
+  <version>0.1.0</version>
+  <description>ESC driver: turns /motor_cmd into RP1 hardware PWM on GPIO12/13/18 (Raspberry Pi 5). Emits no PWM while disarmed or when /motor_cmd stops.</description>
+  <maintainer email="kiko.castelobranco@gmail.com">Francisco Branco</maintainer>
+  <license>MIT</license>
+
+  <exec_depend>rclpy</exec_depend>
+  <exec_depend>mini_acrobat_interfaces</exec_depend>
+
+  <test_depend>python3-pytest</test_depend>
+
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>

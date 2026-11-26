@@ -1,7 +1,8 @@
-# Mini-Acrobat drone side: safety_node + link_monitor + rosbridge (9090) + foxglove (8765).
-# Installed by tools/pi/install_service.sh (@USER@ / @WS@ are filled in there).
+# Mini-Acrobat drone side: safety_node + esc_node (PWM) + link_monitor +
+# rosbridge (9090) + foxglove (8765).
+# Installed by tools/pi/install_service.sh (@USER@ / @WS@ / @REPO@ are filled in there).
 [Unit]
-Description=Mini-Acrobat ROS 2 bringup (safety, link, rosbridge, foxglove)
+Description=Mini-Acrobat ROS 2 bringup (safety, ESC PWM, link, rosbridge, foxglove)
 Wants=network-online.target
 After=network-online.target tailscaled.service
 
@@ -11,7 +12,12 @@ User=@USER@
 Environment=ROS_DOMAIN_ID=0
 Environment=PYTHONUNBUFFERED=1
 Environment=RCUTILS_LOGGING_BUFFERED_STREAM=0
+# As root ("+"); "-" = a PWM problem must not stop rosbridge/safety from starting
+# (esc_node then fails with a clear error in the journal).
+ExecStartPre=-+@REPO@/tools/pi/pwm_setup.sh @USER@
 ExecStart=/bin/bash -c 'source /opt/ros/jazzy/setup.bash && source @WS@/install/setup.bash && exec ros2 launch mini_acrobat_bringup bringup.launch.py'
+# Whatever happened to the nodes: no PWM once the service is down.
+ExecStopPost=-+@REPO@/tools/pi/pwm_setup.sh --off
 # ros2 launch shuts its nodes down cleanly on SIGINT
 KillSignal=SIGINT
 TimeoutStopSec=10
