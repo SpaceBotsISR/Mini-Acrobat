@@ -1,0 +1,12 @@
+# foxglove_bridge: READ-ONLY data visualisation (open it with the Foxglove app,
+# "Foxglove WebSocket" connection, ws://<drone>:8765).
+#
+# Control stays in MAgcs (rosbridge). Leaving `clientPublish`, `services`,
+# `parameters` and `parametersSubscribe` out of `capabilities` means Foxglove
+# cannot publish, call services (arm/disarm) or change parameters.
+foxglove_bridge:
+  ros__parameters:
+    address: "0.0.0.0"
+    capabilities: ["connectionGraph"]
+    topic_whitelist: [".*"]
+    include_hidden: false

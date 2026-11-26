@@ -1,0 +1,4 @@
+link_monitor:
+  ros__parameters:
+    interface: wlan0   # Wi-Fi interface of the Raspberry Pi 5
+    rate_hz: 1.0

@@ -9,6 +9,7 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/MotorSetpoint.msg"
   "msg/MotorCommand.msg"
   "msg/SafetyState.msg"
+  "msg/LinkStatus.msg"
 )
 
 ament_export_dependencies(rosidl_default_runtime)

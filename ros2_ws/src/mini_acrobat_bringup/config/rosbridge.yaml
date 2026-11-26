@@ -1,0 +1,23 @@
+# rosbridge_server for the MAgcs app (control + data).
+#
+# rosbridge exposes EVERYTHING by default, so the globs below allow only what
+# MAgcs needs (see docs/gcs.md). The glob parameters are strings in the form
+# "['/a', '/b*']" (parsed by rosbridge, not ROS array parameters).
+#
+# NOTE: rosbridge has no authentication. Anyone who can reach the port can
+# arm the drone: use it on a trusted network (hotspot with password, Tailscale)
+# and/or bind `address` to a single interface.
+rosbridge_websocket:
+  ros__parameters:
+    address: ""          # "" = all interfaces
+    # topics the GCS may PUBLISH
+    topics_pub_glob: "['/gcs/heartbeat', '/control/motor_setpoint']"
+    # topics the GCS may SUBSCRIBE to
+    topics_sub_glob: "['/safety/state', '/motor_cmd', '/link/status']"
+    # services the GCS may call (rosbridge always appends /rosapi/*)
+    services_glob: "['/safety/arm', '/safety/disarm']"
+    # no actions
+    actions_glob: "[]"
+    # Small, frequent messages: do not batch them.
+    delay_between_messages: 0.0
+    use_compression: false
