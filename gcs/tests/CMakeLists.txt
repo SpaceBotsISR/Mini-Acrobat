@@ -10,6 +10,7 @@ magcs_test(tst_protocol)
 magcs_test(tst_safetystate)
 magcs_test(tst_integration)
 magcs_test(tst_network)
+magcs_test(tst_messagepath)
 
 # The integration test starts tools/fake_drone/fake_drone.py (needs python3 + `pip install websockets`;
 # it is skipped when they are missing). Override the interpreter with MAGCS_PYTHON.

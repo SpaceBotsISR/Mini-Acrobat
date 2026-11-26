@@ -91,6 +91,13 @@ void RosbridgeClient::subscribe(const QString& topic, const QString& type, int t
   }
 }
 
+void RosbridgeClient::unsubscribe(const QString& topic)
+{
+  if (m_subscribed.remove(topic) > 0 && isConnected()) {
+    send(rosbridge::unsubscribe(topic));
+  }
+}
+
 bool RosbridgeClient::publish(const QString& topic, const QJsonObject& msg)
 {
   if (!isConnected()) {

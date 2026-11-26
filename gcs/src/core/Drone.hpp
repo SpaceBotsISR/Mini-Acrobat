@@ -57,6 +57,17 @@ public:
   void setThrottleLimit(double limit);
   double throttleLimit() const { return m_limit; }
 
+  // Fly / test mode: publishes the desired planar motion on /control/cmd
+  // (geometry_msgs/Twist, normalised -1..1: x forward, y left, yaw CCW) at 20 Hz.
+  // Same rules as the motor control output: only while connected and ARMED,
+  // switched off (with a final zero) on disarm / disconnect, and never at the
+  // same time as the per-motor control output (enabling one disables the other).
+  bool flyEnabled() const { return m_flyEnabled; }
+  bool setFlyEnabled(bool on);  // false if refused
+  void setFlyCommand(double vx, double vy, double wz);
+  struct FlyCmd { double vx = 0, vy = 0, wz = 0; };
+  FlyCmd flyCommand() const { return m_fly; }
+
 signals:
   void connectionChanged(bool connected);
   void safetyChanged(const magcs::SafetyState& state);
@@ -66,6 +77,8 @@ signals:
   void armResult(bool ok, const QString& message);
   void disarmResult(bool ok, const QString& message);
   void controlEnabledChanged(bool on);
+  void flyEnabledChanged(bool on);
+  void flyCommandChanged();
   void throttleChanged();
   void log(const QString& text);
 
@@ -73,11 +86,13 @@ private:
   void onTopic(const QString& topic, const QJsonObject& msg);
   void onClientState(RosbridgeClient::State s);
   void publishSetpoint();
+  void publishFly();
   void callSafety(const QString& service, bool isArm);
 
   RosbridgeClient m_client;
   HeartbeatSender m_heartbeat;
   QTimer m_setpointTimer;
+  QTimer m_flyTimer;
   SafetyState m_safety;
   MotorCmd m_motorCmd;
   DroneLinkStatus m_linkStatus;
@@ -86,6 +101,8 @@ private:
   bool m_controlEnabled = false;
   std::array<double, 3> m_throttle{0.0, 0.0, 0.0};
   double m_limit = 0.25;
+  bool m_flyEnabled = false;
+  FlyCmd m_fly;
 };
 
 }  // namespace magcs

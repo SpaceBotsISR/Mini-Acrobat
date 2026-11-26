@@ -39,6 +39,7 @@ private:
   QLabel* m_status;
   QLabel* m_addresses;
   QLabel* m_stats;
+  QLabel* m_heartbeat;
 
   QWidget* m_tsBox;
   QLabel* m_tsPeer;
@@ -52,6 +53,8 @@ private:
 
   int m_rttMs = -1;
   quint64 m_lastRx = 0;
+  quint32 m_lastHb = 0;
+  qint64 m_lastStatsMs = 0;
 };
 
 }  // namespace magcs

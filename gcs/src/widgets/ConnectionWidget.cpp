@@ -1,5 +1,6 @@
 #include "widgets/ConnectionWidget.hpp"
 
+#include <QDateTime>
 #include <QFormLayout>
 #include <QGroupBox>
 #include <QHBoxLayout>
@@ -43,6 +44,9 @@ ConnectionWidget::ConnectionWidget(Drone* drone, NetworkMonitor* monitor, QWidge
   m_addresses = selectable(new QLabel);
   m_stats = selectable(new QLabel);
   m_stats->setStyleSheet("color: gray;");
+  m_heartbeat = new QLabel;
+  m_heartbeat->setToolTip(tr("Heartbeats MAgcs actually sent in the last second (target 20 Hz). "
+                             "The drone disarms if none arrives for 300 ms."));
 
   auto* buttons = new QHBoxLayout;
   buttons->addWidget(m_button);
@@ -55,6 +59,7 @@ ConnectionWidget::ConnectionWidget(Drone* drone, NetworkMonitor* monitor, QWidge
   linkForm->addRow(buttons);
   linkForm->addRow(tr("Status"), m_status);
   linkForm->addRow(tr("Socket"), m_addresses);
+  linkForm->addRow(tr("Heartbeat"), m_heartbeat);
   linkForm->addRow(m_stats);
 
   // ---- tailscale ----------------------------------------------------------------
@@ -151,7 +156,7 @@ void ConnectionWidget::refreshLink()
   switch (m_drone->client()->state()) {
     case S::Connected:
       m_status->setText(tr("connected"));
-      m_status->setStyleSheet("color: #1a7f37; font-weight: bold;");
+      m_status->setStyleSheet("color: #3dd68c; font-weight: bold;");
       m_button->setText(tr("Disconnect"));
       m_addresses->setText(tr("drone %1\nfrom Mac %2")
                              .arg(m_drone->client()->peerAddress().toString(),
@@ -165,7 +170,7 @@ void ConnectionWidget::refreshLink()
       break;
     case S::Disconnected:
       m_status->setText(tr("disconnected"));
-      m_status->setStyleSheet("color: #c0392b; font-weight: bold;");
+      m_status->setStyleSheet("color: #e85d5d; font-weight: bold;");
       m_button->setText(tr("Connect"));
       m_addresses->setText(QStringLiteral("-"));
       break;
@@ -174,13 +179,34 @@ void ConnectionWidget::refreshLink()
 
 void ConnectionWidget::refreshStats()
 {
+  const qint64 nowMs = QDateTime::currentMSecsSinceEpoch();
+  const double dt = m_lastStatsMs > 0 ? qMax<qint64>(1, nowMs - m_lastStatsMs) / 1000.0 : 1.0;
+  m_lastStatsMs = nowMs;
+
   const quint64 rx = m_drone->client()->messagesReceived();
   m_stats->setText(tr("RTT %1 ms   rx %2 msg/s   heartbeats sent %3")
                      .arg(m_rttMs >= 0 && m_drone->isConnected() ? QString::number(m_rttMs)
                                                                  : QStringLiteral("-"))
-                     .arg(rx - m_lastRx)
+                     .arg(static_cast<double>(rx - m_lastRx) / dt, 0, 'f', 0)
                      .arg(m_drone->heartbeat()->sentCount()));
   m_lastRx = rx;
+
+  // Heartbeat rate actually achieved (sent count per second).
+  const quint32 hb = m_drone->heartbeat()->sentCount();
+  const double hz = hb >= m_lastHb ? (hb - m_lastHb) / dt : 0.0;
+  m_lastHb = hb;
+  if (!m_drone->isConnected()) {
+    m_heartbeat->setText(QStringLiteral("-"));
+    m_heartbeat->setStyleSheet(QString());
+  } else if (m_drone->heartbeat()->paused()) {
+    m_heartbeat->setText(tr("PAUSED (simulated link loss)"));
+    m_heartbeat->setStyleSheet("color: #e0a800; font-weight: bold;");
+  } else {
+    m_heartbeat->setText(tr("%1 Hz  (target 20)").arg(hz, 0, 'f', 1));
+    m_heartbeat->setStyleSheet(hz >= 18.0 ? "color: #3dd68c; font-weight: bold;"
+                               : hz >= 10.0 ? "color: #e0a800; font-weight: bold;"
+                                            : "color: #e85d5d; font-weight: bold;");
+  }
 }
 
 void ConnectionWidget::refreshTailscale()

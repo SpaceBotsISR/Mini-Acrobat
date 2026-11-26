@@ -7,6 +7,7 @@
 #include <QVBoxLayout>
 
 #include "core/Drone.hpp"
+#include "widgets/Theme.hpp"
 
 namespace magcs {
 
@@ -29,12 +30,14 @@ SafetyWidget::SafetyWidget(Drone* drone, QWidget* parent)
   m_result = new QLabel;
   m_result->setWordWrap(true);
 
-  m_arm = new QPushButton(tr("ARM"));
-  m_disarm = new QPushButton(tr("DISARM  (Space)"));
-  m_disarm->setMinimumHeight(40);
-  m_disarm->setStyleSheet("QPushButton { background: #c0392b; color: white; font-weight: bold; }"
-                          "QPushButton:disabled { background: #888; }");
-  m_arm->setMinimumHeight(40);
+  m_arm = new QPushButton(tr("ARM   ⇧Space"));
+  m_disarm = new QPushButton(tr("DISARM   Space"));
+  m_arm->setToolTip(tr("Arm the drone (Shift+Space)"));
+  m_disarm->setToolTip(tr("Disarm now (Space, works from anywhere in the app)"));
+  for (QPushButton* b : {m_arm, m_disarm}) {
+    b->setMinimumHeight(42);
+    b->setCursor(Qt::PointingHandCursor);
+  }
 
   auto* form = new QFormLayout;
   form->addRow(tr("Reason"), m_reason);
@@ -60,11 +63,11 @@ SafetyWidget::SafetyWidget(Drone* drone, QWidget* parent)
   connect(m_drone, &Drone::connectionChanged, this, [this]() {refresh();});
   connect(m_drone, &Drone::armResult, this, [this](bool ok, const QString& msg) {
     m_result->setText(tr("arm: %1").arg(msg));
-    m_result->setStyleSheet(ok ? "color: #1a7f37;" : "color: #c0392b; font-weight: bold;");
+    m_result->setStyleSheet(ok ? "color: #3dd68c;" : "color: #e85d5d; font-weight: bold;");
   });
   connect(m_drone, &Drone::disarmResult, this, [this](bool ok, const QString& msg) {
     m_result->setText(tr("disarm: %1").arg(msg));
-    m_result->setStyleSheet(ok ? "color: #1a7f37;" : "color: #c0392b; font-weight: bold;");
+    m_result->setStyleSheet(ok ? "color: #3dd68c;" : "color: #e85d5d; font-weight: bold;");
   });
   refresh();
 }
@@ -74,13 +77,15 @@ void SafetyWidget::refresh()
   const SafetyState& s = m_drone->safety();
   const bool connected = m_drone->isConnected();
 
-  QString style = "border-radius: 6px; color: white; background: %1;";
+  // Banner: what the drone IS. ARMED = danger (red), DISARMED = safe (green).
+  QString style = "border-radius: 8px; color: white; background: %1;";
   if (!s.valid) {
-    m_state->setStyleSheet(style.arg("#888"));
+    m_state->setStyleSheet(style.arg(theme::css(theme::kRaised)) + "color: " + theme::css(theme::kMuted) + ";");
   } else if (s.armed()) {
-    m_state->setStyleSheet(style.arg("#1a7f37"));
+    m_state->setStyleSheet(style.arg(theme::css(theme::kBad)));
   } else {
-    m_state->setStyleSheet(style.arg(s.reason == SafetyState::kReasonLinkLost ? "#c0392b" : "#555"));
+    m_state->setStyleSheet(style.arg(s.reason == SafetyState::kReasonLinkLost ? theme::css(theme::kWarn)
+                                                                              : theme::css(theme::kOk)));
   }
   m_state->setText(s.stateText());
   m_reason->setText(s.reasonText());
@@ -89,8 +94,19 @@ void SafetyWidget::refresh()
   m_maxGap->setText(s.valid ? tr("%1 ms").arg(s.heartbeatMaxGapMs, 0, 'f', 0) : "-");
   m_seq->setText(s.valid ? QString::number(s.lastHeartbeatSeq) : "-");
 
-  m_arm->setEnabled(connected && s.valid && !s.armed());
-  m_disarm->setEnabled(connected);  // always available while connected
+  const bool canArm = connected && s.valid && !s.armed();
+  const bool canDisarm = connected && s.armed();
+  m_arm->setEnabled(canArm);
+  m_disarm->setEnabled(connected);  // always available while connected (panic button)
+  // Colour = "this button would change the state now": ARM red, DISARM green.
+  const QString lit = QStringLiteral(
+    "QPushButton { background: %1; border: 1px solid %1; color: white; font-weight: 700;"
+    " border-radius: 6px; } QPushButton:hover { background: %2; }");
+  const QString idle = QStringLiteral(
+    "QPushButton { font-weight: 600; border-radius: 6px; }");
+  m_arm->setStyleSheet(canArm ? lit.arg(theme::css(theme::kBad), theme::css(theme::kBad.lighter(115))) : idle);
+  m_disarm->setStyleSheet(canDisarm ? lit.arg(theme::css(theme::kOk), theme::css(theme::kOk.lighter(115)))
+                                    : idle);
 }
 
 }  // namespace magcs

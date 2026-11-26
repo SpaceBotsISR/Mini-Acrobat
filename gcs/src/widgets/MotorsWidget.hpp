@@ -4,15 +4,17 @@
 
 #include "core/SafetyState.hpp"
 
-class QCheckBox;
 class QDoubleSpinBox;
 class QLabel;
-class QSlider;
+class QPushButton;
 
 namespace magcs {
 
 class Drone;
+class MotorSlider;
 
+// Manual per-motor throttle (/control/motor_setpoint) with the drone's actual
+// output (/motor_cmd) shown on the same sliders.
 class MotorsWidget : public QWidget {
   Q_OBJECT
 public:
@@ -23,10 +25,9 @@ private:
   void refreshEnabled();
 
   Drone* m_drone;
-  QCheckBox* m_enable;
+  QPushButton* m_enable;
   QDoubleSpinBox* m_limit;
-  std::array<QSlider*, 3> m_slider{};
-  std::array<QLabel*, 3> m_value{};
+  std::array<MotorSlider*, 3> m_slider{};
   QLabel* m_readout;
 };
 

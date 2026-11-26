@@ -54,6 +54,10 @@ add_library(magcs_core STATIC
   src/core/HeartbeatSender.cpp
   src/core/Drone.hpp
   src/core/Drone.cpp
+  src/core/MessagePath.hpp
+  src/core/MessagePath.cpp
+  src/core/TopicHub.hpp
+  src/core/TopicHub.cpp
   src/core/Tailscale.hpp
   src/core/Tailscale.cpp
   src/core/NetworkMonitor.hpp
@@ -77,6 +81,14 @@ target_link_libraries(magcs_core PUBLIC Qt6::Core Qt6::Network Qt6::WebSockets)
 add_library(magcs_ui STATIC
   src/widgets/SignalBars.hpp
   src/widgets/SignalBars.cpp
+  src/widgets/Theme.hpp
+  src/widgets/Theme.cpp
+  src/widgets/TimePlot.hpp
+  src/widgets/TimePlot.cpp
+  src/widgets/MotorSlider.hpp
+  src/widgets/MotorSlider.cpp
+  src/widgets/DroneTopView.hpp
+  src/widgets/DroneTopView.cpp
   src/widgets/LinkText.hpp
   src/widgets/LinkText.cpp
   src/widgets/MacNetworkBox.hpp
@@ -93,6 +105,19 @@ add_library(magcs_ui STATIC
   src/widgets/PlotWidget.cpp
   src/widgets/ConsoleWidget.hpp
   src/widgets/ConsoleWidget.cpp
+  src/panels/Panel.hpp
+  src/panels/PlotPanel.hpp
+  src/panels/PlotPanel.cpp
+  src/panels/TopicsPanel.hpp
+  src/panels/TopicsPanel.cpp
+  src/panels/RawPanel.hpp
+  src/panels/RawPanel.cpp
+  src/panels/GaugePanel.hpp
+  src/panels/GaugePanel.cpp
+  src/panels/PublishPanel.hpp
+  src/panels/PublishPanel.cpp
+  src/panels/FlyPanel.hpp
+  src/panels/FlyPanel.cpp
   src/MainWindow.hpp
   src/MainWindow.cpp
 )

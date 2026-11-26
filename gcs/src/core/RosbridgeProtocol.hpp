@@ -10,6 +10,7 @@ namespace magcs::rosbridge {
 QString advertise(const QString& topic, const QString& type);
 QString subscribe(const QString& topic, const QString& type, int throttleMs = 0,
                   int queueLength = 1);
+QString unsubscribe(const QString& topic);
 QString publish(const QString& topic, const QJsonObject& msg);
 QString callService(const QString& service, const QString& id, const QJsonObject& args);
 

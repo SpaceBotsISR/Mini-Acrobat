@@ -63,6 +63,54 @@ which drone IP / Mac IP the socket uses, RTT, msg/s), the Tailscale path, this
 Mac's Wi-Fi and the **drone's** Wi-Fi and IPs from `/link/status`.
 *Connection > Connect to drone...* (Cmd+K) reopens the connect window.
 
+### Main window: panels and layouts
+
+Every section is a dock: drag a title bar to move it, drop it on another dock to
+make tabs, on an edge to split, double-click to float it, ✕ to close it. All of
+it is dark-themed (`src/widgets/Theme.cpp`).
+
+- **Fixed sections** (*View* menu to show again): Connection, Safety, Motors, Console.
+- **Panels** (*+ Panel* in the toolbar or the *Panels* menu, as many as needed):
+  - **Plot**: several signals at once, as message paths `/topic.field[i]`
+    (e.g. `/imu/data.angular_velocity.x`). Type a path (Tab completes fields),
+    drop a field from Topics, or double-click a field in Topics (goes to the
+    last plot you clicked). Legend: click the colour swatch to change it, click
+    the name to hide it, right-click for more. Window 5 s–10 min (mouse wheel
+    zooms), Auto Y or fixed min/max, pause, clear.
+  - **Topics**: every topic on the drone with type and rate; expand a topic to
+    see its numeric fields live. Needs **rosapi** on the drone (started by
+    `rosbridge_websocket_launch.xml`).
+  - **Raw messages**: the last message of a topic as a tree.
+  - **Gauge**: one value, big, with a min–max bar.
+  - **Publish**: publish JSON to any topic once or at N Hz (*Template* fills in
+    the fields of the type). The safety topics (`/gcs/heartbeat`,
+    `/control/motor_setpoint`, `/control/cmd`) are refused here.
+  - **Fly mode**: see below.
+- **Layouts** (toolbar): the arrangement + every panel's settings (paths,
+  colours, ranges), saved by name, e.g. one per test run. *Layout ▾*: Save
+  (Cmd+S), Save as new, Rename, Delete, Reset to the default arrangement,
+  Export / Import (`.json`, to share). The current layout is saved when
+  switching and on quit.
+
+### Safety keys
+
+- **Space**: DISARM, from anywhere in the app (except while typing in a text
+  field, where Space is a space: press Enter / click elsewhere first).
+- **Shift+Space**: ARM (only if connected, state valid and disarmed).
+- The ARM button lights red when arming is possible, DISARM green when armed.
+- Connection > Heartbeat shows the measured heartbeat rate (target 20 Hz).
+
+### Fly mode (test)
+
+*Enable fly mode* (only while ARMED) publishes `geometry_msgs/msg/Twist` on
+`/control/cmd` at 20 Hz: `linear.x` (W/S, forward is +x), `linear.y` (A/D, left
+is +y), `angular.z` (Q/E, +yaw counter-clockwise), normalised to the
+"max" values set in the panel. Keys are ignored while typing in a text field;
+all are released when MAgcs loses focus. Fly mode and Motors *control output*
+exclude each other, and both stop on disarm or disconnect. **No node on the
+drone uses `/control/cmd` yet**; the motor positions in the drawing are
+placeholders (`DroneTopView.cpp`, `kMotorAngleDeg`).
+
 macOS hides the Wi-Fi network name from apps without Location permission:
 click *Show network name...* in the "This Mac" box to allow it (signal strength
 works without it). The Tailscale CLI is found in `Tailscale.app` or Homebrew.
@@ -79,6 +127,7 @@ ctest --test-dir build --output-on-failure
 ```
 
 - `tst_protocol`, `tst_safetystate`: rosbridge JSON and message parsing.
+- `tst_messagepath`: plot paths (`/topic.a.b[2]`) and numeric-field listing.
 - `tst_network`: `tailscale status --json` / `tailscale ping` parsing, Wi-Fi
   RSSI, `/link/status`, connection modes.
 - `tst_integration`: starts `tools/fake_drone/fake_drone.py` and runs the real
@@ -93,7 +142,9 @@ python3 tools/fake_drone/fake_drone.py --port 9090 -v      # terminal 1
 open /Applications/MAgcs.app                               # pick "Simulator", Connect
 ```
 
-In the app: **ARM**, tick **Control output enabled**, move the sliders. The
+In the app: **ARM**, turn on **Enable control output**, move the sliders. The fake
+drone also answers rosapi and publishes `/imu/data`, `/battery` and `/fake/pose`
+(which moves with Fly mode while armed), so Topics, Plot and Fly mode can be tried. The
 *Safety > Simulate link loss* menu pauses the heartbeat: the fake drone disarms
 after 300 ms, like the real safety node should.
 

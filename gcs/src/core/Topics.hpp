@@ -14,6 +14,15 @@ inline const QString kHeartbeatType = QStringLiteral("mini_acrobat_interfaces/ms
 inline const QString kMotorSetpoint = QStringLiteral("/control/motor_setpoint");
 inline const QString kMotorSetpointType = QStringLiteral("mini_acrobat_interfaces/msg/MotorSetpoint");
 
+// Fly / test mode: desired planar motion (x forward, y left, yaw CCW), normalised
+// to -1..1. No node consumes it yet; the drone-side mixer comes later.
+inline const QString kFlyCmd = QStringLiteral("/control/cmd");
+inline const QString kFlyCmdType = QStringLiteral("geometry_msgs/msg/Twist");
+
+// rosapi (started by rosbridge_websocket_launch): topic list and message layouts.
+inline const QString kRosapiTopics = QStringLiteral("/rosapi/topics");
+inline const QString kRosapiMessageDetails = QStringLiteral("/rosapi/message_details");
+
 inline const QString kArmService = QStringLiteral("/safety/arm");
 inline const QString kDisarmService = QStringLiteral("/safety/disarm");
 

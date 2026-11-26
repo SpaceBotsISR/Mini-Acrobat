@@ -9,7 +9,15 @@ on the Mac without the Pi or ROS.
 It implements only what MAgcs uses: subscribe / advertise / publish /
 call_service for the topics of docs/safety.md, plus a fake /link/status. It is NOT the real safety node:
 always re-test on the drone (props off).
+
+For the panels (Topics, Plot, Raw, Publish, Fly mode) it also fakes:
+  - rosapi: /rosapi/topics and /rosapi/message_details (a few types);
+  - /imu/data (sensor_msgs/Imu-like sines, 50 Hz) and /battery (1 Hz);
+  - /control/cmd (geometry_msgs/Twist from Fly mode) integrated into
+    /fake/pose (x, y, theta) while ARMED, 20 Hz;
+  - any other topic a client publishes is relayed to its subscribers, like ROS.
 """
+import math
 import argparse
 import asyncio
 import json
@@ -27,6 +35,40 @@ SETPOINT = "/control/motor_setpoint"
 STATE = "/safety/state"
 MOTOR_CMD = "/motor_cmd"
 LINK_STATUS = "/link/status"
+FLY_CMD = "/control/cmd"
+IMU = "/imu/data"
+BATTERY = "/battery"
+POSE = "/fake/pose"
+
+TOPIC_TYPES = {
+    HEARTBEAT: "mini_acrobat_interfaces/msg/Heartbeat",
+    SETPOINT: "mini_acrobat_interfaces/msg/MotorSetpoint",
+    STATE: "mini_acrobat_interfaces/msg/SafetyState",
+    MOTOR_CMD: "mini_acrobat_interfaces/msg/MotorCommand",
+    LINK_STATUS: "mini_acrobat_interfaces/msg/LinkStatus",
+    FLY_CMD: "geometry_msgs/msg/Twist",
+    IMU: "sensor_msgs/msg/Imu",
+    BATTERY: "sensor_msgs/msg/BatteryState",
+    POSE: "geometry_msgs/msg/Pose2D",
+    "/rosout": "rcl_interfaces/msg/Log",
+}
+
+# Minimal rosapi/message_details answers (same shape as rosapi).
+def _td(t, names, types, lens=None):
+    return {"type": t, "fieldnames": names, "fieldtypes": types,
+            "fieldarraylen": lens or [-1] * len(names), "examples": [], "constnames": [], "constvalues": []}
+
+TYPEDEFS = {
+    "geometry_msgs/msg/Twist": [
+        _td("geometry_msgs/Twist", ["linear", "angular"], ["geometry_msgs/Vector3", "geometry_msgs/Vector3"]),
+        _td("geometry_msgs/Vector3", ["x", "y", "z"], ["float64"] * 3)],
+    "geometry_msgs/msg/Pose2D": [_td("geometry_msgs/Pose2D", ["x", "y", "theta"], ["float64"] * 3)],
+    "std_msgs/msg/Float64": [_td("std_msgs/Float64", ["data"], ["float64"])],
+    "std_msgs/msg/Bool": [_td("std_msgs/Bool", ["data"], ["bool"])],
+    "std_msgs/msg/String": [_td("std_msgs/String", ["data"], ["string"])],
+    "mini_acrobat_interfaces/msg/MotorSetpoint": [
+        _td("mini_acrobat_interfaces/MotorSetpoint", ["throttle"], ["float32"], [3])],
+}
 
 DISARMED, ARMED = 0, 1
 R_NONE, R_BOOT, R_USER, R_LINK_LOST = 0, 1, 2, 3
@@ -138,6 +180,10 @@ class Server:
         self.verbose = verbose
         self.clients = {}  # ws -> set(subscribed topics)
         self.link = FakeLink()
+        self.extra_types = {}  # topics advertised by clients
+        self.fly = (0.0, 0.0, 0.0)
+        self.fly_t = None
+        self.pose = [0.0, 0.0, 0.0]
 
     async def send(self, ws, obj):
         try:
@@ -180,8 +226,34 @@ class Server:
                 self.safety.on_heartbeat(int(msg.get("seq", 0)))
             elif topic == SETPOINT:
                 self.safety.on_setpoint(msg.get("throttle", [0, 0, 0]))
+            elif topic == FLY_CMD:
+                lin, ang = msg.get("linear", {}), msg.get("angular", {})
+                self.fly = (float(lin.get("x", 0)), float(lin.get("y", 0)), float(ang.get("z", 0)))
+                self.fly_t = time.monotonic()
+            if topic not in (HEARTBEAT,):
+                await self.broadcast(topic, msg)  # relay, like ROS
+        elif op == "advertise":
+            if m.get("topic") and m.get("type"):
+                self.extra_types[m["topic"]] = m["type"]
         elif op == "call_service":
             svc = m.get("service")
+            if svc == "/rosapi/topics":
+                types = dict(TOPIC_TYPES)
+                types.update(self.extra_types)
+                names = sorted(types)
+                await self.send(ws, {"op": "service_response", "service": svc, "id": m.get("id"), "result": True,
+                                     "values": {"topics": names, "types": [types[n] for n in names]}})
+                return
+            if svc == "/rosapi/message_details":
+                t = (m.get("args") or {}).get("type", "")
+                defs = TYPEDEFS.get(t)
+                if defs is None:
+                    await self.send(ws, {"op": "service_response", "service": svc, "id": m.get("id"),
+                                         "result": False, "values": f"unknown type {t}"})
+                else:
+                    await self.send(ws, {"op": "service_response", "service": svc, "id": m.get("id"),
+                                         "result": True, "values": {"typedefs": defs}})
+                return
             if svc == "/safety/arm":
                 ok, text = self.safety.arm()
             elif svc == "/safety/disarm":
@@ -195,7 +267,7 @@ class Server:
             if self.verbose:
                 print(f"{svc}: {ok} ({text})", file=sys.stderr, flush=True)
             await self.broadcast(STATE, self.safety.state_msg())
-        # advertise / unadvertise: nothing to do
+        # unadvertise: nothing to do
 
     async def ticker(self):
         """50 Hz /motor_cmd, ~10 Hz /safety/state and on every transition, 1 Hz /link/status."""
@@ -203,6 +275,8 @@ class Server:
         last_state_t = 0.0
         last_link_t = 0.0
         last_window_t = time.monotonic()
+        last_pose_t = 0.0
+        t0 = time.monotonic()
         while True:
             await asyncio.sleep(0.02)
             now = time.monotonic()
@@ -219,6 +293,34 @@ class Server:
             if now - last_link_t >= 1.0:
                 last_link_t = now
                 await self.broadcast(LINK_STATUS, self.link.msg())
+                await self.broadcast(BATTERY, {"voltage": 11.8 - 0.0005 * (now - t0) + random.uniform(-0.02, 0.02),
+                                               "current": -2.0 + random.uniform(-0.1, 0.1),
+                                               "percentage": max(0.0, 0.92 - 0.0001 * (now - t0)),
+                                               "present": True})
+            # IMU: slow wobble + noise, plus the motors' effect when armed
+            tt = now - t0
+            await self.broadcast(IMU, {
+                "header": {"stamp": {"sec": int(tt), "nanosec": int((tt % 1) * 1e9)}, "frame_id": "imu"},
+                "orientation": {"x": 0.0, "y": 0.0, "z": math.sin(self.pose[2] / 2), "w": math.cos(self.pose[2] / 2)},
+                "angular_velocity": {"x": 0.05 * math.sin(tt * 1.3) + random.gauss(0, 0.01),
+                                     "y": 0.04 * math.cos(tt * 0.9) + random.gauss(0, 0.01),
+                                     "z": (self.fly[2] if armed else 0.0) + random.gauss(0, 0.01)},
+                "linear_acceleration": {"x": sum(thr) * 0.8 + random.gauss(0, 0.05),
+                                        "y": 0.1 * math.sin(tt * 0.7) + random.gauss(0, 0.05),
+                                        "z": 9.81 + random.gauss(0, 0.05)},
+            })
+            # Fly command -> fake planar pose (only while armed and fresh)
+            if now - last_pose_t >= 0.05:
+                dt = now - last_pose_t if last_pose_t else 0.05
+                last_pose_t = now
+                fresh = self.fly_t is not None and now - self.fly_t < 0.3
+                if armed and fresh:
+                    vx, vy, wz = self.fly
+                    th = self.pose[2]
+                    self.pose[0] += (vx * math.cos(th) - vy * math.sin(th)) * dt
+                    self.pose[1] += (vx * math.sin(th) + vy * math.cos(th)) * dt
+                    self.pose[2] = (th + wz * 2.0 * dt + math.pi) % (2 * math.pi) - math.pi
+                await self.broadcast(POSE, {"x": self.pose[0], "y": self.pose[1], "theta": self.pose[2]})
 
 
 async def main():

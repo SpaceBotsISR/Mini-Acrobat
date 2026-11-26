@@ -1,69 +1,56 @@
 #include "widgets/MotorsWidget.hpp"
 
-#include <QCheckBox>
 #include <QDoubleSpinBox>
-#include <QGridLayout>
-#include <QGroupBox>
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QPushButton>
 #include <QSettings>
-#include <QSlider>
 #include <QVBoxLayout>
 
 #include "core/Drone.hpp"
+#include "widgets/MotorSlider.hpp"
+#include "widgets/Theme.hpp"
 
 namespace magcs {
-
-namespace {
-constexpr int kScale = 1000;  // slider units per 1.0 of throttle
-}
 
 MotorsWidget::MotorsWidget(Drone* drone, QWidget* parent)
 : QWidget(parent), m_drone(drone)
 {
-  m_enable = new QCheckBox(tr("Control output enabled (20 Hz)"));
-  m_enable->setToolTip(tr("Only possible while ARMED, with all throttles at zero."));
+  m_enable = new QPushButton;
+  m_enable->setCheckable(true);
+  m_enable->setMinimumHeight(30);
+  m_enable->setToolTip(tr("Publish the sliders at 20 Hz. Only while ARMED, with all throttles at "
+                          "zero. Turns fly mode off."));
 
   m_limit = new QDoubleSpinBox;
   m_limit->setRange(0.0, 1.0);
   m_limit->setSingleStep(0.05);
   m_limit->setDecimals(2);
+  m_limit->setFixedWidth(64);
   m_limit->setValue(QSettings().value("motors/limit", 0.25).toDouble());
   m_drone->setThrottleLimit(m_limit->value());
 
-  auto* limitRow = new QHBoxLayout;
-  limitRow->addWidget(new QLabel(tr("Limit |throttle| <=")));
-  limitRow->addWidget(m_limit);
-  limitRow->addStretch();
   auto* zero = new QPushButton(tr("Zero all"));
-  limitRow->addWidget(zero);
-
-  auto* grid = new QGridLayout;
-  for (int i = 0; i < 3; ++i) {
-    m_slider[i] = new QSlider(Qt::Horizontal);
-    m_slider[i]->setRange(-kScale, kScale);
-    m_slider[i]->setTickPosition(QSlider::TicksBelow);
-    m_slider[i]->setTickInterval(kScale / 2);
-    m_value[i] = new QLabel("+0.000");
-    m_value[i]->setMinimumWidth(56);
-    m_value[i]->setStyleSheet("font-family: monospace;");
-    grid->addWidget(new QLabel(tr("Motor %1").arg(i + 1)), i, 0);
-    grid->addWidget(m_slider[i], i, 1);
-    grid->addWidget(m_value[i], i, 2);
-    connect(m_slider[i], &QSlider::valueChanged, this, [this, i](int v) {
-      m_drone->setThrottle(i, static_cast<double>(v) / kScale);
-    });
-  }
-
-  m_readout = new QLabel;
-  m_readout->setStyleSheet("font-family: monospace; color: gray;");
+  auto* top = new QHBoxLayout;
+  top->addWidget(m_enable, 1);
+  top->addSpacing(6);
+  top->addWidget(new QLabel(tr("limit ±")));
+  top->addWidget(m_limit);
+  top->addWidget(zero);
 
   auto* root = new QVBoxLayout(this);
-  root->addWidget(m_enable);
-  root->addLayout(limitRow);
-  root->addLayout(grid);
-  root->addWidget(new QLabel(tr("Output from the drone (/motor_cmd):")));
+  root->setContentsMargins(10, 8, 10, 8);
+  root->setSpacing(2);
+  root->addLayout(top);
+  root->addSpacing(6);
+  for (int i = 0; i < 3; ++i) {
+    m_slider[i] = new MotorSlider(tr("Motor %1").arg(i + 1));
+    root->addWidget(m_slider[i]);
+    connect(m_slider[i], &MotorSlider::valueEdited, this, [this, i](double v) {m_drone->setThrottle(i, v);});
+  }
+  m_readout = new QLabel;
+  m_readout->setStyleSheet(QStringLiteral("color: %1; font-size: 11px;").arg(theme::css(theme::kMuted)));
+  root->addSpacing(4);
   root->addWidget(m_readout);
   root->addStretch();
 
@@ -71,42 +58,59 @@ MotorsWidget::MotorsWidget(Drone* drone, QWidget* parent)
   connect(m_limit, &QDoubleSpinBox::valueChanged, this, [this](double v) {
     m_drone->setThrottleLimit(v);
     QSettings().setValue("motors/limit", v);
-  });
-  connect(m_enable, &QCheckBox::toggled, this, [this](bool on) {
-    if (!m_drone->setControlEnabled(on)) {
-      QSignalBlocker b(m_enable);
-      m_enable->setChecked(false);
+    for (MotorSlider* s : m_slider) {
+      s->setLimit(v);
     }
   });
-  connect(m_drone, &Drone::controlEnabledChanged, this, [this](bool on) {
-    QSignalBlocker b(m_enable);
-    m_enable->setChecked(on);
+  connect(m_enable, &QPushButton::clicked, this, [this](bool on) {
+    if (!m_drone->setControlEnabled(on)) {
+      m_enable->setChecked(false);
+    }
+    refreshEnabled();
   });
+  connect(m_drone, &Drone::controlEnabledChanged, this, [this]() {refreshEnabled();});
   connect(m_drone, &Drone::throttleChanged, this, [this]() {syncFromDrone();});
   connect(m_drone, &Drone::safetyChanged, this, [this]() {refreshEnabled();});
   connect(m_drone, &Drone::connectionChanged, this, [this]() {refreshEnabled();});
   connect(m_drone, &Drone::motorCmdReceived, this, [this](const MotorCmd& c) {
-    m_readout->setText(QString::asprintf("%s  %+.3f  %+.3f  %+.3f",
-                                         c.armed ? "ARMED   " : "disarmed",
-                                         c.throttle[0], c.throttle[1], c.throttle[2]));
+    const bool valid = m_drone->isConnected() && m_drone->safety().valid;
+    for (int i = 0; i < 3; ++i) {
+      m_slider[i]->setActual(c.throttle[i], valid);
+    }
+    m_readout->setText(valid ? tr("▲ drone output (/motor_cmd): %1   %2  %3  %4")
+                                 .arg(c.armed ? tr("ARMED") : tr("disarmed"))
+                                 .arg(c.throttle[0], 0, 'f', 3)
+                                 .arg(c.throttle[1], 0, 'f', 3)
+                                 .arg(c.throttle[2], 0, 'f', 3)
+                             : tr("▲ drone output (/motor_cmd): -"));
   });
+  for (MotorSlider* s : m_slider) {
+    s->setLimit(m_limit->value());
+  }
   refreshEnabled();
   syncFromDrone();
+  m_readout->setText(tr("▲ drone output (/motor_cmd): -"));
 }
 
 void MotorsWidget::syncFromDrone()
 {
   const auto t = m_drone->throttle();
   for (int i = 0; i < 3; ++i) {
-    QSignalBlocker b(m_slider[i]);
-    m_slider[i]->setValue(static_cast<int>(t[i] * kScale));
-    m_value[i]->setText(QString::asprintf("%+.3f", t[i]));
+    m_slider[i]->setValue(t[i]);
   }
 }
 
 void MotorsWidget::refreshEnabled()
 {
-  m_enable->setEnabled(m_drone->isConnected() && m_drone->safety().armed());
+  const bool on = m_drone->controlEnabled();
+  const bool possible = m_drone->isConnected() && m_drone->safety().armed();
+  m_enable->setChecked(on);
+  m_enable->setEnabled(on || possible);
+  m_enable->setText(on ? tr("Control output ON · 20 Hz")
+                       : possible ? tr("Enable control output") : tr("Control output (needs ARMED)"));
+  m_enable->setStyleSheet(on ? QStringLiteral("QPushButton { background: %1; border-color: %1; color: white; "
+                                              "font-weight: 600; }").arg(theme::css(theme::kAccent))
+                             : QString());
 }
 
 }  // namespace magcs

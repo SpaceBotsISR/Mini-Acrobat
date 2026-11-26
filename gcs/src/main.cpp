@@ -1,10 +1,10 @@
 #include <QApplication>
 #include <QCommandLineParser>
 #include <QIcon>
-#include <QStyleFactory>
 
 #include "MainWindow.hpp"
 #include "widgets/ConnectionWidget.hpp"
+#include "widgets/Theme.hpp"
 
 int main(int argc, char* argv[])
 {
@@ -12,7 +12,7 @@ int main(int argc, char* argv[])
   QCoreApplication::setOrganizationName("ISR");
   QCoreApplication::setApplicationName("MAgcs");
   QCoreApplication::setApplicationVersion(QStringLiteral(MAGCS_VERSION));
-  QApplication::setStyle(QStyleFactory::create("Fusion"));
+  magcs::theme::apply(app);  // Fusion + one dark scheme for every window
   QApplication::setWindowIcon(QIcon(QStringLiteral(":/magcs.png")));
 
   QCommandLineParser parser;

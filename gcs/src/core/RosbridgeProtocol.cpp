@@ -18,12 +18,19 @@ QString advertise(const QString& topic, const QString& type)
 
 QString subscribe(const QString& topic, const QString& type, int throttleMs, int queueLength)
 {
-  QJsonObject o{{"op", "subscribe"}, {"topic", topic}, {"type", type},
-                {"queue_length", queueLength}};
+  QJsonObject o{{"op", "subscribe"}, {"topic", topic}, {"queue_length", queueLength}};
+  if (!type.isEmpty()) {
+    o.insert("type", type);  // empty: rosbridge looks the type up itself
+  }
   if (throttleMs > 0) {
     o.insert("throttle_rate", throttleMs);
   }
   return toText(o);
+}
+
+QString unsubscribe(const QString& topic)
+{
+  return toText({{"op", "unsubscribe"}, {"topic", topic}});
 }
 
 QString publish(const QString& topic, const QJsonObject& msg)

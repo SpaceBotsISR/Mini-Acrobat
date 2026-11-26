@@ -2,6 +2,7 @@
 
 #include <QDateTime>
 #include <QJsonArray>
+#include <QJsonObject>
 #include <QUrl>
 #include <algorithm>
 #include <cmath>
@@ -18,6 +19,7 @@ Drone::Drone(QObject* parent)
   qRegisterMetaType<magcs::DroneLinkStatus>("magcs::DroneLinkStatus");
 
   m_client.advertise(topics::kMotorSetpoint, topics::kMotorSetpointType);
+  m_client.advertise(topics::kFlyCmd, topics::kFlyCmdType);
   m_client.subscribe(topics::kSafetyState, topics::kSafetyStateType);
   m_client.subscribe(topics::kMotorCmd, topics::kMotorCmdType);
   m_client.subscribe(topics::kLinkStatus, topics::kLinkStatusType);
@@ -29,6 +31,10 @@ Drone::Drone(QObject* parent)
   m_setpointTimer.setTimerType(Qt::PreciseTimer);
   m_setpointTimer.setInterval(50);  // 20 Hz
   connect(&m_setpointTimer, &QTimer::timeout, this, &Drone::publishSetpoint);
+
+  m_flyTimer.setTimerType(Qt::PreciseTimer);
+  m_flyTimer.setInterval(50);  // 20 Hz
+  connect(&m_flyTimer, &QTimer::timeout, this, &Drone::publishFly);
 }
 
 void Drone::connectTo(const ConnectionTarget& target)
@@ -64,6 +70,7 @@ void Drone::connectToHost(const QString& host, quint16 port)
 void Drone::disconnectFromHost()
 {
   setControlEnabled(false);
+  setFlyEnabled(false);
   m_client.close();
 }
 
@@ -77,6 +84,7 @@ void Drone::disarm()
   // Stop sending throttle first, whatever the answer will be.
   zeroThrottle();
   setControlEnabled(false);
+  setFlyEnabled(false);
   callSafety(topics::kDisarmService, false);
 }
 
@@ -122,6 +130,10 @@ bool Drone::setControlEnabled(bool on)
       return false;
     }
   }
+  if (on && m_flyEnabled) {
+    setFlyEnabled(false);
+    emit log(QStringLiteral("fly mode off: motor control output enabled"));
+  }
   m_controlEnabled = on;
   if (on) {
     m_setpointTimer.start();
@@ -133,6 +145,60 @@ bool Drone::setControlEnabled(bool on)
   }
   emit controlEnabledChanged(on);
   return true;
+}
+
+bool Drone::setFlyEnabled(bool on)
+{
+  if (on == m_flyEnabled) {
+    return true;
+  }
+  if (on) {
+    if (!isConnected()) {
+      emit log(QStringLiteral("fly mode refused: not connected"));
+      return false;
+    }
+    if (!m_safety.armed()) {
+      emit log(QStringLiteral("fly mode refused: drone is not ARMED"));
+      return false;
+    }
+    if (m_controlEnabled) {
+      setControlEnabled(false);
+      emit log(QStringLiteral("motor control output off: fly mode enabled"));
+    }
+  }
+  m_flyEnabled = on;
+  m_fly = FlyCmd{};
+  emit flyCommandChanged();
+  if (on) {
+    m_flyTimer.start();
+    publishFly();
+  } else {
+    m_flyTimer.stop();
+    publishFly();  // one explicit zero
+  }
+  emit flyEnabledChanged(on);
+  return true;
+}
+
+void Drone::setFlyCommand(double vx, double vy, double wz)
+{
+  FlyCmd c{std::clamp(vx, -1.0, 1.0), std::clamp(vy, -1.0, 1.0), std::clamp(wz, -1.0, 1.0)};
+  if (!m_flyEnabled) {
+    c = FlyCmd{};
+  }
+  if (c.vx == m_fly.vx && c.vy == m_fly.vy && c.wz == m_fly.wz) {
+    return;
+  }
+  m_fly = c;
+  emit flyCommandChanged();
+}
+
+void Drone::publishFly()
+{
+  const FlyCmd c = m_flyEnabled ? m_fly : FlyCmd{};
+  m_client.publish(topics::kFlyCmd,
+                   {{"linear", QJsonObject{{"x", c.vx}, {"y", c.vy}, {"z", 0.0}}},
+                    {"angular", QJsonObject{{"x", 0.0}, {"y", 0.0}, {"z", c.wz}}}});
 }
 
 void Drone::setThrottle(int motor, double value)
@@ -184,6 +250,7 @@ void Drone::onTopic(const QString& topic, const QJsonObject& msg)
       // Never keep a throttle around while disarmed.
       zeroThrottle();
       setControlEnabled(false);
+      setFlyEnabled(false);
     }
     emit safetyChanged(m_safety);
   } else if (topic == topics::kMotorCmd) {
@@ -201,9 +268,16 @@ void Drone::onClientState(RosbridgeClient::State s)
   const bool connected = (s == RosbridgeClient::State::Connected);
   if (!connected) {
     m_setpointTimer.stop();
+    m_flyTimer.stop();
     if (m_controlEnabled) {
       m_controlEnabled = false;
       emit controlEnabledChanged(false);
+    }
+    if (m_flyEnabled) {
+      m_flyEnabled = false;
+      m_fly = FlyCmd{};
+      emit flyCommandChanged();
+      emit flyEnabledChanged(false);
     }
     zeroThrottle();
     m_safety = SafetyState{};

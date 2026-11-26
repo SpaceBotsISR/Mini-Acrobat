@@ -1,6 +1,7 @@
 #include "core/NetworkMonitor.hpp"
 
 #include <QNetworkInterface>
+#include <QProcessEnvironment>
 
 namespace magcs {
 
@@ -92,6 +93,14 @@ QProcess* NetworkMonitor::runCli(const QStringList& args, int timeoutMs)
       guard->kill();
     }
   });
+  // The macOS app binary (/Applications/Tailscale.app/.../Tailscale, and the
+  // /usr/local/bin launcher) guesses from the environment whether it was started
+  // from a shell. Launched from a GUI app it tries to open its own window and
+  // fails ("The Tailscale GUI failed to start ... CLIError error 3").
+  // TAILSCALE_BE_CLI=1 forces CLI mode; other tailscale builds ignore it.
+  QProcessEnvironment env = QProcessEnvironment::systemEnvironment();
+  env.insert(QStringLiteral("TAILSCALE_BE_CLI"), QStringLiteral("1"));
+  p->setProcessEnvironment(env);
   p->start(m_tsBinary, args);
   return p;
 }

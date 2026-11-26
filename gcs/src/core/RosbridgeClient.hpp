@@ -39,7 +39,11 @@ public:
 
   // Registered topics survive reconnects.
   void advertise(const QString& topic, const QString& type);
+  // An empty type lets rosbridge look it up.
   void subscribe(const QString& topic, const QString& type, int throttleMs = 0);
+  void unsubscribe(const QString& topic);
+  bool isSubscribed(const QString& topic) const { return m_subscribed.contains(topic); }
+  bool isAdvertised(const QString& topic) const { return m_advertised.contains(topic); }
 
   // Returns false (and drops the message) when not connected.
   bool publish(const QString& topic, const QJsonObject& msg);
