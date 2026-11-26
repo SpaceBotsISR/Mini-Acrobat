@@ -1,0 +1,5 @@
+<RCC>
+  <qresource prefix="/">
+    <file>magcs.png</file>
+  </qresource>
+</RCC>

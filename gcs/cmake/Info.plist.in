@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>CFBundleDevelopmentRegion</key>
+  <string>en</string>
+  <key>CFBundleExecutable</key>
+  <string>${MACOSX_BUNDLE_EXECUTABLE_NAME}</string>
+  <key>CFBundleIconFile</key>
+  <string>${MACOSX_BUNDLE_ICON_FILE}</string>
+  <key>CFBundleIdentifier</key>
+  <string>${MACOSX_BUNDLE_GUI_IDENTIFIER}</string>
+  <key>CFBundleInfoDictionaryVersion</key>
+  <string>6.0</string>
+  <key>CFBundleName</key>
+  <string>${MACOSX_BUNDLE_BUNDLE_NAME}</string>
+  <key>CFBundleDisplayName</key>
+  <string>${MACOSX_BUNDLE_BUNDLE_NAME}</string>
+  <key>CFBundlePackageType</key>
+  <string>APPL</string>
+  <key>CFBundleShortVersionString</key>
+  <string>${MACOSX_BUNDLE_SHORT_VERSION_STRING}</string>
+  <key>CFBundleVersion</key>
+  <string>${MACOSX_BUNDLE_BUNDLE_VERSION}</string>
+  <key>LSApplicationCategoryType</key>
+  <string>public.app-category.developer-tools</string>
+  <key>LSMinimumSystemVersion</key>
+  <string>${CMAKE_OSX_DEPLOYMENT_TARGET}</string>
+  <key>NSHighResolutionCapable</key>
+  <true/>
+  <key>NSSupportsAutomaticGraphicsSwitching</key>
+  <true/>
+  <key>NSHumanReadableCopyright</key>
+  <string>${MACOSX_BUNDLE_COPYRIGHT}</string>
+  <!-- macOS only gives the Wi-Fi network name (SSID) to apps with Location permission. -->
+  <key>NSLocationUsageDescription</key>
+  <string>MAgcs shows the name of the Wi-Fi network this Mac uses to reach the drone. macOS requires Location permission to read it.</string>
+  <key>NSLocationWhenInUseUsageDescription</key>
+  <string>MAgcs shows the name of the Wi-Fi network this Mac uses to reach the drone. macOS requires Location permission to read it.</string>
+  <!-- Local network access (rosbridge on the drone, fake drone on localhost). -->
+  <key>NSLocalNetworkUsageDescription</key>
+  <string>MAgcs connects to the Mini-Acrobat drone on your local network.</string>
+</dict>
+</plist>
