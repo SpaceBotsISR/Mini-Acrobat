@@ -9,6 +9,12 @@
 #include <QFileInfo>
 #include <QInputDialog>
 #include <QJsonArray>
+#include <QKeyEvent>
+#include <QLineEdit>
+#include <QPlainTextEdit>
+#include <QTextEdit>
+#include <QAbstractSpinBox>
+#include <QApplication>
 #include <QJsonDocument>
 #include <QLabel>
 #include <QMenu>
@@ -117,6 +123,13 @@ MainWindow::MainWindow(QWidget* parent)
     applyLayout(loadLayout(name));
   }
   refreshLayoutCombo();
+
+  // Keyboard safety: Space / Shift+Space must reach DISARM / ARM even when a
+  // path or filter field has focus, Esc leaves a text field, and nothing
+  // starts with the cursor in a text field.
+  setFocusPolicy(Qt::StrongFocus);
+  qApp->installEventFilter(this);
+  QTimer::singleShot(0, this, &MainWindow::focusNeutral);
 }
 
 MainWindow::~MainWindow()
@@ -127,6 +140,7 @@ MainWindow::~MainWindow()
   clearPanels();
   qDeleteAll(m_fixed);
   m_fixed.clear();
+  qApp->removeEventFilter(this);
 }
 
 // ---- docks & panels ---------------------------------------------------------------
@@ -634,8 +648,56 @@ bool MainWindow::runConnectDialog(bool startup)
                     startup ? ConnectDialog::Purpose::Startup : ConnectDialog::Purpose::Change,
                     startup ? nullptr : this);
   const int result = dlg.exec();
-  followTarget();  // the dialog probes whatever is selected; go back to the real target
+  followTarget();
+  QTimer::singleShot(0, this, &MainWindow::focusNeutral);  // the dialog probes whatever is selected; go back to the real target
   return result == QDialog::Accepted || !startup;
+}
+
+bool MainWindow::inMainWindow(QWidget* w) const
+{
+  if (!w) {
+    return false;
+  }
+  QWidget* top = w->window();
+  if (top == this) {
+    return true;
+  }
+  auto* dock = qobject_cast<QDockWidget*>(top);  // a floating panel
+  return dock && dock->parentWidget() == this;
+}
+
+void MainWindow::focusNeutral()
+{
+  QWidget* f = QApplication::focusWidget();
+  if (!f || inMainWindow(f)) {
+    setFocus(Qt::OtherFocusReason);
+  }
+}
+
+bool MainWindow::eventFilter(QObject* watched, QEvent* event)
+{
+  const QEvent::Type t = event->type();
+  if (t == QEvent::ShortcutOverride || t == QEvent::KeyPress) {
+    auto* ke = static_cast<QKeyEvent*>(event);
+    QWidget* f = QApplication::focusWidget();
+    if (f && inMainWindow(f)) {
+      // Only the JSON editor (Publish) may type spaces: topic names, paths and
+      // numbers never contain one, so there Space stays the safety key.
+      const bool multiLine = (qobject_cast<QPlainTextEdit*>(f) && !static_cast<QPlainTextEdit*>(f)->isReadOnly()) ||
+                             (qobject_cast<QTextEdit*>(f) && !static_cast<QTextEdit*>(f)->isReadOnly());
+      const auto mods = ke->modifiers() & ~Qt::KeypadModifier;
+      if (t == QEvent::ShortcutOverride && ke->key() == Qt::Key_Space && !multiLine &&
+          (mods == Qt::NoModifier || mods == Qt::ShiftModifier)) {
+        return true;  // the field never sees it -> the DISARM / ARM shortcut fires
+      }
+      if (t == QEvent::KeyPress && ke->key() == Qt::Key_Escape &&
+          (qobject_cast<QLineEdit*>(f) || multiLine || qobject_cast<QAbstractSpinBox*>(f->parentWidget()))) {
+        focusNeutral();
+        return true;
+      }
+    }
+  }
+  return QMainWindow::eventFilter(watched, event);
 }
 
 void MainWindow::followTarget()

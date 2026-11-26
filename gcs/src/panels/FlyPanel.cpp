@@ -6,6 +6,7 @@
 #include <QDoubleSpinBox>
 #include <QHBoxLayout>
 #include <QKeyEvent>
+#include <QTimer>
 #include <QLabel>
 #include <QLineEdit>
 #include <QPlainTextEdit>
@@ -34,8 +35,16 @@ bool typingInTextField()
   if (auto* cb = qobject_cast<QComboBox*>(w)) {
     return cb->isEditable();
   }
-  return qobject_cast<QLineEdit*>(w) || qobject_cast<QPlainTextEdit*>(w) ||
-         qobject_cast<QTextEdit*>(w) || qobject_cast<QAbstractSpinBox*>(w);
+  if (qobject_cast<QAbstractSpinBox*>(w) || qobject_cast<QAbstractSpinBox*>(w->parentWidget())) {
+    return false;  // numbers only: W/A/S/D/Q/E mean nothing there, so they drive
+  }
+  if (auto* pe = qobject_cast<QPlainTextEdit*>(w)) {
+    return !pe->isReadOnly();
+  }
+  if (auto* te = qobject_cast<QTextEdit*>(w)) {
+    return !te->isReadOnly();
+  }
+  return qobject_cast<QLineEdit*>(w) != nullptr;
 }
 
 }  // namespace
@@ -64,6 +73,12 @@ FlyPanel::FlyPanel(const PanelContext& ctx, QWidget* parent)
   m_status->setStyleSheet(QStringLiteral("color: %1;").arg(theme::css(theme::kMuted)));
   m_status->setText(tr("Publishes %1 (%2, normalised -1..1) at 20 Hz. No drone node uses it yet.")
                       .arg(topics::kFlyCmd, topics::kFlyCmdType));
+  m_idleText = m_status->text();
+  m_hintTimer.setSingleShot(true);
+  connect(&m_hintTimer, &QTimer::timeout, this, [this]() {
+    m_status->setText(m_idleText);
+    m_status->setStyleSheet(QStringLiteral("color: %1;").arg(theme::css(theme::kMuted)));
+  });
 
   auto* limits = new QHBoxLayout;
   limits->addWidget(new QLabel(tr("max |x|, |y|")));
@@ -84,7 +99,7 @@ FlyPanel::FlyPanel(const PanelContext& ctx, QWidget* parent)
     if (!m_ctx.drone->setFlyEnabled(on)) {
       m_toggle->setChecked(false);
     } else if (on) {
-      setFocus();  // out of any text field, so WASD drive
+      setFocus(Qt::OtherFocusReason);  // out of any text field, so WASD drive
     }
     refresh();
   });
@@ -132,6 +147,13 @@ void FlyPanel::refresh()
   m_view->setPressed(m_keys);
 }
 
+void FlyPanel::showHint(const QString& text)
+{
+  m_status->setText(text);
+  m_status->setStyleSheet(QStringLiteral("color: %1;").arg(theme::css(theme::kWarn)));
+  m_hintTimer.start(3000);
+}
+
 void FlyPanel::applyKeys()
 {
   auto k = [this](int key) {return m_keys.contains(key) ? 1.0 : 0.0;};
@@ -161,17 +183,26 @@ bool FlyPanel::eventFilter(QObject* o, QEvent* e)
     case QEvent::KeyPress:
     case QEvent::KeyRelease: {
       auto* ke = static_cast<QKeyEvent*>(e);
-      if (!kFlyKeys.contains(ke->key()) || typingInTextField() ||
+      if (!kFlyKeys.contains(ke->key()) ||
           (ke->modifiers() & (Qt::ControlModifier | Qt::MetaModifier | Qt::AltModifier))) {
         break;
       }
+      if (typingInTextField()) {
+        if (e->type() == QEvent::KeyPress && window()->isActiveWindow()) {
+          showHint(tr("W A S D Q E are going to a text field. Press Esc or click this panel to drive."));
+        }
+        break;
+      }
       const bool flying = m_ctx.drone->flyEnabled();
-      // The same key event reaches the filter once per widget in the chain:
-      // only act on it once, for the window that has focus.
-      if (o != QApplication::focusWidget() && o != QApplication::activeWindow() &&
-          QApplication::focusWidget()) {
+      // One physical key press reaches this filter several times (first the
+      // QWindow, then the focus widget and its parents). Act on the first
+      // sighting only; when flying, consume it right there.
+      const KeySeen seen{e->type(), ke->key(), ke->timestamp(), ke->isAutoRepeat()};
+      if (seen == m_lastKey) {
         return flying;
       }
+      m_lastKey = seen;
+      Q_UNUSED(o);
       if (!flying) {
         // Preview: light the key caps only.
         if (!ke->isAutoRepeat()) {

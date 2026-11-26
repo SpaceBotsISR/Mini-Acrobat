@@ -1,4 +1,5 @@
 #pragma once
+#include <QTimer>
 #include <QSet>
 
 #include "panels/Panel.hpp"
@@ -41,6 +42,22 @@ private:
   QLabel* m_status;
   QSet<int> m_keys;
   bool m_filtering = false;
+  QTimer m_hintTimer;
+  QString m_idleText;
+  void showHint(const QString& text);
+  struct KeySeen {
+    int type = 0;
+    int key = 0;
+    quint64 ts = 0;
+    bool repeat = false;
+    KeySeen() = default;
+    KeySeen(int t, int k, quint64 time, bool r) : type(t), key(k), ts(time), repeat(r) {}
+    bool operator==(const KeySeen& o) const
+    {
+      return type == o.type && key == o.key && ts == o.ts && repeat == o.repeat;
+    }
+  };
+  KeySeen m_lastKey;
 };
 
 }  // namespace magcs

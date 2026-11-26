@@ -41,6 +41,7 @@ public:
 
 protected:
   void closeEvent(QCloseEvent* event) override;
+  bool eventFilter(QObject* watched, QEvent* event) override;
 
 private:
   QDockWidget* addFixedDock(const QString& title, const QString& objectName, QWidget* widget);
@@ -71,7 +72,9 @@ private:
 
   void buildMenus();
   void updateStatusBar();
-  void followTarget();  // Tailscale ping target = the drone, in Tailscale mode
+  void followTarget();
+  void focusNeutral();  // take focus out of any text field
+  bool inMainWindow(QWidget* w) const;  // Tailscale ping target = the drone, in Tailscale mode
 
   Drone m_drone;
   NetworkMonitor m_network;

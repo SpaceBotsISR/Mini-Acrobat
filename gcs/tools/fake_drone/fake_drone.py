@@ -16,6 +16,15 @@ For the panels (Topics, Plot, Raw, Publish, Fly mode) it also fakes:
   - /control/cmd (geometry_msgs/Twist from Fly mode) integrated into
     /fake/pose (x, y, theta) while ARMED, 20 Hz;
   - any other topic a client publishes is relayed to its subscribers, like ROS.
+
+Simulated flight (only while ARMED; the app's Fly mode takes priority):
+    python3 fake_drone.py --scenario forward --level 0.4
+    scenarios: forward, circle, square, sine, step   (--hover adds a base throttle)
+  or change it at runtime from the app's Publish panel: topic /fake/scenario,
+  type std_msgs/msg/String, message {"data": "circle 0.5"}  ("off" to stop).
+  A fake mixer turns the command into /motor_cmd throttles (motors at
+  0/120/240 deg, like the drawing) so the motor plots move. It is NOT the
+  drone's real mixer.
 """
 import math
 import argparse
@@ -39,6 +48,36 @@ FLY_CMD = "/control/cmd"
 IMU = "/imu/data"
 BATTERY = "/battery"
 POSE = "/fake/pose"
+SCENARIO = "/fake/scenario"
+SCENARIOS = ("forward", "circle", "square", "sine", "step")
+MOTOR_ANGLES = (0.0, 2 * math.pi / 3, 4 * math.pi / 3)  # motor 1 at the front (+x)
+
+
+def scenario_cmd(name, level, t):
+    """(vx, vy, wz) of a scripted manoeuvre, t = seconds since it started."""
+    if name == "forward":
+        return level, 0.0, 0.0
+    if name == "circle":
+        return level, 0.0, 0.5 * level
+    if name == "sine":
+        return level * math.sin(2 * math.pi * t / 6.0), 0.0, 0.0
+    if name == "step":
+        return (level if (t % 4.0) < 2.0 else 0.0), 0.0, 0.0
+    if name == "square":
+        turn = (math.pi / 2) / (2.0 * max(level, 0.05))  # pose turns at 2*wz rad/s
+        t = t % (3.0 + turn)
+        return (level, 0.0, 0.0) if t < 3.0 else (0.0, 0.0, level)
+    return 0.0, 0.0, 0.0
+
+
+def fake_mix(vx, vy, wz, hover):
+    """Command -> 3 throttles. Thrust towards (vx, vy) comes from the motors
+    behind that direction; yaw adds the same amount to all three."""
+    out = []
+    for a in MOTOR_ANGLES:
+        push = -(vx * math.cos(a) + vy * math.sin(a))
+        out.append(max(-1.0, min(1.0, hover + 0.6 * push + 0.3 * wz)))
+    return out
 
 TOPIC_TYPES = {
     HEARTBEAT: "mini_acrobat_interfaces/msg/Heartbeat",
@@ -50,6 +89,7 @@ TOPIC_TYPES = {
     IMU: "sensor_msgs/msg/Imu",
     BATTERY: "sensor_msgs/msg/BatteryState",
     POSE: "geometry_msgs/msg/Pose2D",
+    SCENARIO: "std_msgs/msg/String",
     "/rosout": "rcl_interfaces/msg/Log",
 }
 
@@ -184,6 +224,22 @@ class Server:
         self.fly = (0.0, 0.0, 0.0)
         self.fly_t = None
         self.pose = [0.0, 0.0, 0.0]
+        self.scenario = None  # (name, level)
+        self.scenario_t0 = None
+        self.hover = 0.0
+
+    def set_scenario(self, text):
+        parts = (text or "").split()
+        if not parts or parts[0] in ("off", "stop", "none"):
+            self.scenario = None
+        elif parts[0] in SCENARIOS:
+            level = float(parts[1]) if len(parts) > 1 else 0.3
+            self.scenario = (parts[0], max(-1.0, min(1.0, level)))
+        else:
+            print(f"unknown scenario {text!r} (use {', '.join(SCENARIOS)} or off)", file=sys.stderr, flush=True)
+            return
+        self.scenario_t0 = None
+        print(f"scenario: {self.scenario or 'off'}", file=sys.stderr, flush=True)
 
     async def send(self, ws, obj):
         try:
@@ -226,6 +282,8 @@ class Server:
                 self.safety.on_heartbeat(int(msg.get("seq", 0)))
             elif topic == SETPOINT:
                 self.safety.on_setpoint(msg.get("throttle", [0, 0, 0]))
+            elif topic == SCENARIO:
+                self.set_scenario(str(msg.get("data", "")))
             elif topic == FLY_CMD:
                 lin, ang = msg.get("linear", {}), msg.get("angular", {})
                 self.fly = (float(lin.get("x", 0)), float(lin.get("y", 0)), float(ang.get("z", 0)))
@@ -281,6 +339,19 @@ class Server:
             await asyncio.sleep(0.02)
             now = time.monotonic()
             armed, thr = self.safety.tick()
+            # Effective planar command: app Fly mode first, then the scenario.
+            fly_fresh = self.fly_t is not None and now - self.fly_t < 0.3
+            cmd = None
+            if armed and fly_fresh:
+                cmd = self.fly
+            elif armed and self.scenario:
+                if self.scenario_t0 is None:
+                    self.scenario_t0 = now
+                cmd = scenario_cmd(self.scenario[0], self.scenario[1], now - self.scenario_t0)
+            elif not armed:
+                self.scenario_t0 = None  # restart the manoeuvre on the next arm
+            if cmd is not None and not self.safety.sp_fresh():
+                thr = fake_mix(*cmd, self.hover)  # no direct motor setpoints: the mixer drives
             await self.broadcast(MOTOR_CMD, {"armed": armed, "throttle": thr})
             if now - last_window_t >= 1.0:
                 self.safety.window_max_gap_ms = self.safety.max_gap_ms
@@ -304,8 +375,8 @@ class Server:
                 "orientation": {"x": 0.0, "y": 0.0, "z": math.sin(self.pose[2] / 2), "w": math.cos(self.pose[2] / 2)},
                 "angular_velocity": {"x": 0.05 * math.sin(tt * 1.3) + random.gauss(0, 0.01),
                                      "y": 0.04 * math.cos(tt * 0.9) + random.gauss(0, 0.01),
-                                     "z": (self.fly[2] if armed else 0.0) + random.gauss(0, 0.01)},
-                "linear_acceleration": {"x": sum(thr) * 0.8 + random.gauss(0, 0.05),
+                                     "z": (2.0 * cmd[2] if cmd else 0.0) + random.gauss(0, 0.01)},
+                "linear_acceleration": {"x": (1.5 * cmd[0] if cmd else 0.0) + random.gauss(0, 0.05),
                                         "y": 0.1 * math.sin(tt * 0.7) + random.gauss(0, 0.05),
                                         "z": 9.81 + random.gauss(0, 0.05)},
             })
@@ -313,9 +384,8 @@ class Server:
             if now - last_pose_t >= 0.05:
                 dt = now - last_pose_t if last_pose_t else 0.05
                 last_pose_t = now
-                fresh = self.fly_t is not None and now - self.fly_t < 0.3
-                if armed and fresh:
-                    vx, vy, wz = self.fly
+                if cmd is not None:
+                    vx, vy, wz = cmd
                     th = self.pose[2]
                     self.pose[0] += (vx * math.cos(th) - vy * math.sin(th)) * dt
                     self.pose[1] += (vx * math.sin(th) + vy * math.cos(th)) * dt
@@ -328,10 +398,16 @@ async def main():
     ap.add_argument("--host", default="127.0.0.1")
     ap.add_argument("--port", type=int, default=9090, help="0 = pick a free port")
     ap.add_argument("--heartbeat-timeout-ms", type=int, default=300)
+    ap.add_argument("--scenario", choices=SCENARIOS, help="simulated manoeuvre while ARMED")
+    ap.add_argument("--level", type=float, default=0.3, help="scenario command level, -1..1 (default 0.3)")
+    ap.add_argument("--hover", type=float, default=0.0, help="base throttle added to every motor by the fake mixer")
     ap.add_argument("-v", "--verbose", action="store_true")
     args = ap.parse_args()
 
     server = Server(Safety(hb_timeout_ms=args.heartbeat_timeout_ms), args.verbose)
+    server.hover = max(-1.0, min(1.0, args.hover))
+    if args.scenario:
+        server.set_scenario(f"{args.scenario} {args.level}")
     async with serve(server.handler, args.host, args.port) as srv:
         port = list(srv.sockets)[0].getsockname()[1]
         print(f"READY {port}", flush=True)

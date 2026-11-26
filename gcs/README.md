@@ -94,8 +94,9 @@ it is dark-themed (`src/widgets/Theme.cpp`).
 
 ### Safety keys
 
-- **Space**: DISARM, from anywhere in the app (except while typing in a text
-  field, where Space is a space: press Enter / click elsewhere first).
+- **Space**: DISARM, from anywhere in the app, also with the cursor in a path,
+  topic or number field (none of them needs spaces). Only the Publish JSON
+  editor types spaces. **Esc** leaves a text field.
 - **Shift+Space**: ARM (only if connected, state valid and disarmed).
 - The ARM button lights red when arming is possible, DISARM green when armed.
 - Connection > Heartbeat shows the measured heartbeat rate (target 20 Hz).
@@ -144,7 +145,20 @@ open /Applications/MAgcs.app                               # pick "Simulator", C
 
 In the app: **ARM**, turn on **Enable control output**, move the sliders. The fake
 drone also answers rosapi and publishes `/imu/data`, `/battery` and `/fake/pose`
-(which moves with Fly mode while armed), so Topics, Plot and Fly mode can be tried. The
+(which moves with Fly mode while armed), so Topics, Plot and Fly mode can be tried.
+
+Simulated flight, without touching the keyboard (only while ARMED; Fly mode wins):
+
+```bash
+python3 tools/fake_drone/fake_drone.py --scenario forward --level 0.4 --hover 0.2
+```
+
+Scenarios: `forward`, `circle`, `square`, `sine`, `step`. `--level` is the
+command (-1..1), `--hover` a base throttle on every motor. A fake mixer turns
+the command into `/motor_cmd` throttles (not the drone's real mixer) and
+`/fake/pose` integrates it. To change it while running, use a **Publish**
+panel: topic `/fake/scenario`, type `std_msgs/msg/String`,
+`{"data": "circle 0.5"}` (`"off"` stops). The
 *Safety > Simulate link loss* menu pauses the heartbeat: the fake drone disarms
 after 300 ms, like the real safety node should.
 

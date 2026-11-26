@@ -69,7 +69,8 @@ PlotPanel::PlotPanel(const PanelContext& ctx, QWidget* parent)
     s->setRange(-1e9, 1e9);
     s->setDecimals(3);
     s->setButtonSymbols(QAbstractSpinBox::NoButtons);
-    s->setFixedWidth(70);
+    s->setMinimumWidth(84);
+    s->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
   }
   m_yMin->setValue(-1.0);
   m_yMax->setValue(1.0);
