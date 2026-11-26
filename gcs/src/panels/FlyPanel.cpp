@@ -88,15 +88,13 @@ FlyPanel::FlyPanel(const PanelContext& ctx, QWidget* parent)
     }
     refresh();
   });
-  connect(m_ctx.drone, &Drone::flyEnabledChanged, this, [this](bool on) {
-    if (on && !m_filtering) {
-      qApp->installEventFilter(this);
-      m_filtering = true;
-    } else if (!on && m_filtering) {
-      qApp->removeEventFilter(this);
-      m_filtering = false;
-      m_keys.clear();
-    }
+  // The filter is always on so the key caps light up even with fly mode off
+  // (preview only: nothing is published and the keys are not consumed).
+  qApp->installEventFilter(this);
+  m_filtering = true;
+  connect(m_ctx.drone, &Drone::flyEnabledChanged, this, [this](bool) {
+    m_keys.clear();
+    m_view->setPressed(m_keys);
     refresh();
   });
   connect(m_ctx.drone, &Drone::flyCommandChanged, this, &FlyPanel::refresh);
@@ -167,11 +165,24 @@ bool FlyPanel::eventFilter(QObject* o, QEvent* e)
           (ke->modifiers() & (Qt::ControlModifier | Qt::MetaModifier | Qt::AltModifier))) {
         break;
       }
+      const bool flying = m_ctx.drone->flyEnabled();
       // The same key event reaches the filter once per widget in the chain:
       // only act on it once, for the window that has focus.
       if (o != QApplication::focusWidget() && o != QApplication::activeWindow() &&
           QApplication::focusWidget()) {
-        return true;
+        return flying;
+      }
+      if (!flying) {
+        // Preview: light the key caps only.
+        if (!ke->isAutoRepeat()) {
+          if (e->type() == QEvent::KeyPress) {
+            m_keys.insert(ke->key());
+          } else {
+            m_keys.remove(ke->key());
+          }
+          m_view->setPressed(m_keys);
+        }
+        break;
       }
       if (!ke->isAutoRepeat()) {
         if (e->type() == QEvent::KeyPress) {
@@ -185,6 +196,11 @@ bool FlyPanel::eventFilter(QObject* o, QEvent* e)
     }
     case QEvent::ApplicationDeactivate:
     case QEvent::WindowDeactivate:
+      if (!m_ctx.drone->flyEnabled()) {
+        m_keys.clear();
+        m_view->setPressed(m_keys);
+        break;
+      }
       releaseAll();  // never keep a key "held" when focus goes elsewhere
       break;
     default:
