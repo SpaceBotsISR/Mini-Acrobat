@@ -226,7 +226,23 @@ void Drone::zeroThrottle()
 
 void Drone::setThrottleLimit(double limit)
 {
-  m_limit = std::clamp(limit, 0.0, 1.0);
+  limit = std::clamp(limit, 0.0, 1.0);
+  if (limit > m_limit) {
+    // Raising the limit must not make the output jump: pull the stored
+    // throttles down to what was actually being sent (the old limit).
+    bool changed = false;
+    for (double& v : m_throttle) {
+      const double c = std::clamp(v, -m_limit, m_limit);
+      changed = changed || c != v;
+      v = c;
+    }
+    m_limit = limit;
+    if (changed) {
+      emit throttleChanged();
+    }
+    return;
+  }
+  m_limit = limit;
 }
 
 void Drone::publishSetpoint()

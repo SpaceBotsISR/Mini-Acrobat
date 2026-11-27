@@ -21,7 +21,8 @@ namespace magcs {
 //    (no jump on enable);
 //  - any transition to DISARMED, or a lost connection, zeroes the throttles and
 //    switches control output off;
-//  - all outputs are clamped to +-throttleLimit.
+//  - all outputs are clamped to +-throttleLimit; raising the limit first pulls
+//    the stored throttles down to the old limit (no jump in the output).
 class Drone : public QObject {
   Q_OBJECT
 public:
